@@ -1,0 +1,18 @@
+# 构建产物
+gopher-powers
+gopher-powers-*
+parity-replay
+/dist/
+/web/dist/
+*.exe
+
+# 运行数据
+server-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# 依赖与缓存
+node_modules/
+.rivet/
+.DS_Store
