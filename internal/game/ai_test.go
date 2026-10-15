@@ -40,7 +40,8 @@ func TestAICounterAir(t *testing.T) {
 	}
 	g.Players[1].SatelliteUntil = g.Time + 100
 	g.UpdateFog()
-	g.AddBuilding(1, "radar", 1600, 900) // aa 需要 radar（源码 requires 过滤）
+	g.AddBuilding(1, "radar", 1600, 900)  // aa 需要 radar（源码 requires 过滤）
+	g.AddBuilding(1, "armory", 1500, 1000) // aa 由 armory 生产（源码 producer 过滤）
 	got := g.aiCounterUnit(1, choices, "ground")
 	if got != "aa" {
 		t.Fatalf("4 架敌机威胁下应出 aa，得 %q", got)
