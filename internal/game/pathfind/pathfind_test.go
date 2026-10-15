@@ -52,10 +52,11 @@ func TestGoldenWallGap(t *testing.T) {
 	if len(got) < 3 || got[0] != (Node{0, 0}) || got[len(got)-1] != (Node{9, 9}) {
 		t.Fatalf("S2 端点错误: %v", got)
 	}
-	// 穿过缺口：库 raw 代价 13.899 = 5√2+4（实测 node pathfinding 0.4.18）。
-	// 等价判定：路径代价 = 库代价（等长即合法绕行）。
-	if c := pathCost(got); math.Abs(c-(5*sqrt2+4)) > 1e-9 {
-		t.Fatalf("S2 代价 = %v, want %v (path %v)", c, 5*sqrt2+4, got)
+	// 穿过缺口：库 raw 实测代价 13.899494936611657（node pathfinding 0.4.18 逐段累加）。
+	// 注意不能用闭式 5√2+4——浮点逐段累加与常量折叠结果不同（差 1ulp 级）。
+	// 容差 1e-9 覆盖段序差异的舍入。
+	if c := pathCost(got); math.Abs(c-13.899494936611657) > 1e-9 {
+		t.Fatalf("S2 代价 = %v, want 13.899494936611657 (path %v)", c, got)
 	}
 }
 
