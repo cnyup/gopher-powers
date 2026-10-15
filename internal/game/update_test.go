@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // Wave 1f RED：update 主循环驱动经济（油井收入）。
 // 源语义：p.credits += oil 数 × 11 × dt（game.js update L495）。
@@ -14,12 +17,13 @@ func TestUpdateOilIncome(t *testing.T) {
 	}
 	// 给 side0 一口油井：每 tick +11*0.05=0.55。
 	g.Oil[0].Owner = 0
-	dt := 0.05 // 变量阻断常量折叠
+	dt := 0.05
 	rate := 11.0
 	g.Update(dt)
-	want := rate * dt // 运行时乘法，对齐 IEEE754 累加结果
-	if got := g.Players[0].Credits - start; got != want {
-		t.Fatalf("油井收入 = %v, want %v", got, want)
+	// 常量折叠会算出精确 0.55；运行时累加为 0.549999…9545（JS/Go 一致）。
+	// 两侧都是「真值」，断言用容差而非恒等（编译器 SSA 折叠不可 reliably 阻断）。
+	if got := g.Players[0].Credits - start; math.Abs(got-rate*dt) > 1e-9 {
+		t.Fatalf("油井收入 = %v, want ≈%v", got, rate*dt)
 	}
 }
 
