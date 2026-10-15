@@ -167,7 +167,7 @@ func (g *Game) retreatAIUnits(side int) {
 		if !g.HasBuilding(side, station) && !(station == "factory" && g.HasBuilding(side, "armory")) {
 			continue
 		}
-		g.RequestResupply(u, nil)
+		g.RequestResupplyFull(u, nil)
 	}
 }
 

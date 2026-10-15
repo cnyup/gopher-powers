@@ -17,6 +17,12 @@ import (
 
 var nextID atomic.Int64
 
+// DeckApproach 着舰进近。
+type DeckApproach struct {
+	CarrierID int
+	Start, Until float64
+}
+
 // Order 单位指令。type 决定字段语义（对齐 JS order 对象）。
 type Order struct {
 	Type          string  `json:"type"`
@@ -28,6 +34,7 @@ type Order struct {
 	DestinationX  float64 `json:"destinationX,omitempty"`
 	DestinationY  float64 `json:"destinationY,omitempty"`
 	Progress      float64 `json:"progress,omitempty"`
+	HomeID        int     `json:"homeId,omitempty"`
 }
 
 // Unit 对齐 addUnit 产出的单位对象（字段名即 JSON 序列化名，协议兼容锚点）。
@@ -84,6 +91,16 @@ type Unit struct {
 	AvoidSide     int      `json:"avoidSide,omitempty"`
 	AvoidUntil    float64  `json:"avoidUntil,omitempty"`
 	AvoidRepathAt float64  `json:"avoidRepathAt,omitempty"`
+	SonarFXAt     float64 `json:"-"`
+	PulseAt       float64 `json:"-"`
+	DeckApproach  *DeckApproach `json:"-"`
+	TransportStage string `json:"-"`
+	LoadStartedAt float64 `json:"-"`
+	LandingID     int    `json:"-"`
+	WingRearm     float64 `json:"-"`
+	ServiceSearchAt float64 `json:"-"`
+	ServiceTimer    float64 `json:"-"`
+	LastAttacker    int    `json:"-"`
 	BlockedRepathAt float64 `json:"blockedRepathAt,omitempty"`
 	PathGoal      string   `json:"-"`
 	MotionGoal    *Point   `json:"-"`
@@ -259,19 +276,31 @@ type Effect struct {
 
 // Projectile 弹道（modern-combat 维护）。
 type Projectile struct {
-	ID       int     `json:"id"`
-	SourceID int     `json:"sourceId"`
-	Kind     string  `json:"kind"`
-	X        float64 `json:"x"`
-	Y        float64 `json:"y"`
-	ToX      float64 `json:"toX"`
-	ToY      float64 `json:"toY"`
-	StartX   float64 `json:"startX"`
-	StartY   float64 `json:"startY"`
-	Owner    int     `json:"owner"`
-	Amount   float64 `json:"amount"`
-	Style    string  `json:"style"`
-	Finished bool    `json:"finished"`
+	ID           int     `json:"id"`
+	SourceID     int     `json:"sourceId"`
+	TargetID     int     `json:"targetId"`
+	TargetType   string  `json:"targetType"`
+	Kind         string  `json:"kind"`
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
+	ToX          float64 `json:"toX"`
+	ToY          float64 `json:"toY"`
+	StartX       float64 `json:"startX"`
+	StartY       float64 `json:"startY"`
+	Angle        float64 `json:"angle"`
+	Owner        int     `json:"owner"`
+	Amount       float64 `json:"amount"`
+	Style        string  `json:"style"`
+	HP           float64 `json:"hp"`
+	Speed        float64 `json:"speed"`
+	Age          float64 `json:"age"`
+	Jam          float64 `json:"jam"`
+	SourceHeight float64 `json:"sourceHeight,omitempty"`
+	TargetHeight float64 `json:"targetHeight,omitempty"`
+	FlightRole   string  `json:"flightRole,omitempty"`
+	FallDuration float64 `json:"fallDuration,omitempty"`
+	Returning    bool    `json:"returning"`
+	Finished     bool    `json:"finished"`
 }
 
 // Events 对齐 events 回调（notice/voice/selection/shot/end）。

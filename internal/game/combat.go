@@ -39,14 +39,12 @@ func (b *Building) getX() float64   { return b.X }
 func (b *Building) getY() float64   { return b.Y }
 func (b *Building) getHP() float64  { return b.HP }
 
-// aircraftGrounded 对齐 modern-combat.js:19-23（停泊即地面）。
+// aircraftGrounded 委托 full 版。
 func (g *Game) aircraftGrounded(e targetEntity) bool {
 	if e.getKind() != "unit" {
 		return false
 	}
-	u := e.(*Unit)
-	// 简化：embarked / 停在航母/机场。完整版在 1d modern-combat 接入 serviceReady 判定。
-	return u.EmbarkedIn != 0
+	return g.aircraftGroundedFull(e.(*Unit))
 }
 
 // CanAttack 对齐 game.js L767-795。
@@ -549,10 +547,8 @@ func (g *Game) CanSeeEntity(side int, target targetEntity) bool {
 	return false
 }
 
-// submarineSurfaced 对齐 modern-combat.js:76（1d 完整化，先按 hp 受损上浮近似）。
-func (g *Game) submarineSurfaced(u *Unit) bool {
-	return false
-}
+// submarineSurfaced 委托 full 版。
+func (g *Game) submarineSurfaced(u *Unit) bool { return g.submarineSurfacedFull(u) }
 
 // detectionRange 对齐 game.js L1193-1199。
 func (g *Game) detectionRange(side int, e targetEntity) float64 {

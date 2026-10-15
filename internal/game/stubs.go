@@ -13,8 +13,8 @@ func (g *Game) UpdateIntelligence(dt float64) {}
 
 // --- modern-combat（Wave 1d 完整实现，先空转）---
 
-func (g *Game) updateElectronicWarfare(dt float64) {}
-func (g *Game) updateProjectiles(dt float64)       {}
+func (g *Game) updateElectronicWarfare(dt float64) { g.updateElectronicWarfareFull(dt) }
+func (g *Game) updateProjectiles(dt float64)       { g.updateProjectilesFull(dt) }
 
 // --- 生产（Wave 1f-4）---
 
