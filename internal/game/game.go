@@ -412,6 +412,9 @@ func New(playerFaction, enemyFaction string, ev *Events, options Options) (*Game
 		ev = &Events{}
 	}
 	g := &Game{Events: ev, RNG: defaultRNG}
+	if options.RNG != nil {
+		g.RNG = options.RNG
+	}
 	g.Multiplayer = options.Multiplayer
 	g.BattleID = createBattleID()
 	g.VictoryMode = "quick"
@@ -530,6 +533,10 @@ type Options struct {
 	MapID            string
 	BattlefieldScale float64
 	Players          []PlayerConfig
+
+	// RNG 在 New 内部（initBases 之前）注入，构造期 fireTimer 等
+	// 随机消费即走对拍流。nil = 默认 math/rand 全局源。
+	RNG func() float64
 }
 
 func defaultRNG() float64 {

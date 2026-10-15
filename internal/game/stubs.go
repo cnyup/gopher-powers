@@ -211,51 +211,6 @@ func (g *Game) moveUnit(u *Unit, goal Point, dt float64, stopDistance float64) {
 	g.moveUnitNow(u, goal, dt, stopDistance)
 }
 
-func (g *Game) moveUnitNow(u *Unit, goal Point, dt float64, stopDistance float64) {
-	// 1f-2 完整实现（air/ship/地面寻路三分支）。
-	if Distance(u.X, u.Y, goal.X, goal.Y) <= stopDistance {
-		return
-	}
-	if gpdata.HasTag(u.Type, "air") {
-		g.moveWithAvoidance(u, goal, dt, stopDistance)
-		return
-	}
-	if gpdata.HasTag(u.Type, "ship") {
-		dest := g.navalGoal(goal.X, goal.Y, unitRadiusOf(u.Type))
-		g.moveWithAvoidance(u, dest, dt, stopDistance)
-		return
-	}
-	// 地面：寻路（1f-2 接 pathfind）。
-	g.moveWithAvoidance(u, goal, dt, stopDistance)
-}
-
-func (g *Game) moveWithAvoidance(u *Unit, point Point, dt float64, stopDistance float64) bool {
-	// 对齐 game.js L1051-1081 十一方向避让；1f-2 完整评分，先直线。
-	d := Distance(u.X, u.Y, point.X, point.Y)
-	speed := gpdata.UNITS[u.Type].Speed
-	amount := speed * dt
-	if u.JammedUntil > g.Time {
-		amount *= .6
-	}
-	if max := d - stopDistance; amount > max {
-		amount = max
-	}
-	if amount <= .001 {
-		return true
-	}
-	angle := atan2(point.Y-u.Y, point.X-u.X)
-	next := Point{u.X + cos(angle)*amount, u.Y + sin(angle)*amount}
-	if !g.canOccupyUnit(u, next) {
-		return false
-	}
-	u.X, u.Y = next.X, next.Y
-	u.Angle = angle
-	u.MovePulse += dt * 7
-	u.LastMovedAt = g.Time
-	u.DeployProgress = 0
-	return true
-}
-
 func (g *Game) canOccupyUnit(u *Unit, p Point) bool {
 	// 对齐 game.js L1040-1049。
 	if p.X < 18 || p.X > g.World.Width-18 || p.Y < 18 || p.Y > g.World.Height-18 {

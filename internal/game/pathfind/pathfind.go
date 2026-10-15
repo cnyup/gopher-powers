@@ -124,6 +124,12 @@ func (h *pathHeap) updateItem(idx int) {
 	h.siftUp(pos)
 }
 
+// pathTrace 可选观测钩子（对拍诊断用）。
+var pathTrace func(ev string, x, y int, f, g float64)
+
+// SetPathTrace 注入/移除 A* 观测钩子。
+func SetPathTrace(f func(ev string, x, y int, f, g float64)) { pathTrace = f }
+
 // FindPath 对齐 AStarFinder.findPath（OnlyWhenNoObstacles 对角）。
 // 邻接序对齐 Grid.getNeighbors：↑→↓← 后 ↖↗↘↙。
 func FindPath(sx, sy, ex, ey int, grid *Grid) []Node {
@@ -145,6 +151,9 @@ func FindPath(sx, sy, ex, ey int, grid *Grid) []Node {
 
 	for len(heap.arr) > 0 {
 		cur := heap.pop()
+		if pathTrace != nil {
+			pathTrace("POP", cur%w, cur/w, nodes[cur].f, nodes[cur].g)
+		}
 		nodes[cur].closed = true
 		cx, cy := cur%w, cur/w
 		if cx == ex && cy == ey {
@@ -178,16 +187,16 @@ func FindPath(sx, sy, ex, ey int, grid *Grid) []Node {
 		if s3 {
 			nbs = append(nbs, nb{cx - 1, cy, false})
 		}
-		if s0 && s3 { // ↖
+		if s0 && s3 && grid.IsWalkableAt(cx-1, cy-1) { // ↖
 			nbs = append(nbs, nb{cx - 1, cy - 1, true})
 		}
-		if s0 && s1 { // ↗
+		if s0 && s1 && grid.IsWalkableAt(cx+1, cy-1) { // ↗
 			nbs = append(nbs, nb{cx + 1, cy - 1, true})
 		}
-		if s1 && s2 { // ↘
+		if s1 && s2 && grid.IsWalkableAt(cx+1, cy+1) { // ↘
 			nbs = append(nbs, nb{cx + 1, cy + 1, true})
 		}
-		if s2 && s3 { // ↙
+		if s2 && s3 && grid.IsWalkableAt(cx-1, cy+1) { // ↙
 			nbs = append(nbs, nb{cx - 1, cy + 1, true})
 		}
 		for _, n := range nbs {
@@ -208,9 +217,12 @@ func FindPath(sx, sy, ex, ey int, grid *Grid) []Node {
 				}
 				nodes[ni].f = ng + nodes[ni].h
 				nodes[ni].parent = cur
-				if !nodes[ni].opened {
-					heap.push(ni)
-					nodes[ni].opened = true
+			if !nodes[ni].opened {
+				heap.push(ni)
+				if pathTrace != nil {
+					pathTrace("PUSH", n.x, n.y, nodes[ni].f, nodes[ni].g)
+				}
+				nodes[ni].opened = true
 				} else {
 					heap.updateItem(ni)
 				}

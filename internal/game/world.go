@@ -34,7 +34,9 @@ type unitIndexView struct {
 func (v *unitIndexView) Nearby(u *Unit) []*Unit {
 	var out []*Unit
 	for _, e := range v.idx.Nearby(unitView{u}) {
-		out = append(out, e.(*unitView).u)
+		if uv, ok := e.(unitView); ok {
+			out = append(out, uv.u)
+		}
 	}
 	return out
 }

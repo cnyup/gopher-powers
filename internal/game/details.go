@@ -72,7 +72,6 @@ func (g *Game) unitCost(side int, typ string) float64 {
 	return gpdata.UnitCostFor(g.Players[side].Faction, typ)
 }
 
-// findSpawn 对齐 game.js L609-619（向日葵螺旋找空位）。
 func (g *Game) findSpawn(x, y float64, typ string) *Point {
 	radius := unitRadiusOf(typ)
 	layer := unitLayerOf(typ)

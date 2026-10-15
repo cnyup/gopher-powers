@@ -77,11 +77,11 @@ func main() {
 	if err := json.Unmarshal(data, &sc); err != nil {
 		panic(err)
 	}
+	sc.Options.RNG = makeLCG(20261014)
 	g, err := game.New(sc.FactionA, sc.FactionB, &game.Events{}, sc.Options)
 	if err != nil {
 		panic(err)
 	}
-	g.RNG = makeLCG(20261014)
 
 	cmdIdx := 0
 	var snaps []snap
