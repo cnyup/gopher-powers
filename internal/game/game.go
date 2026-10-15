@@ -247,11 +247,12 @@ type CyberPending struct {
 	ExecuteAt float64 `json:"executeAt"`
 }
 
-// Fog 单方迷雾网格。
+// Fog 单方迷雾网格（json 字段名对齐源 schema）。
 type Fog struct {
-	Cols, Rows int
-	Visible    []bool
-	Explored   []bool
+	Cols     int    `json:"cols"`
+	Rows     int    `json:"rows"`
+	Visible  []bool `json:"visible"`
+	Explored []bool `json:"explored"`
 }
 
 // Effect 战场特效（快照协议字段）。
