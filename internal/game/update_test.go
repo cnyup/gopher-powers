@@ -14,9 +14,10 @@ func TestUpdateOilIncome(t *testing.T) {
 	}
 	// 给 side0 一口油井：每 tick +11*0.05=0.55。
 	g.Oil[0].Owner = 0
-	g.Update(0.05)
-	want := 11.0
-	want *= 0.05 // 运行时乘法，对齐 IEEE754（常量折叠会得 0.55 尾差）
+	dt := 0.05 // 变量阻断常量折叠
+	rate := 11.0
+	g.Update(dt)
+	want := rate * dt // 运行时乘法，对齐 IEEE754 累加结果
 	if got := g.Players[0].Credits - start; got != want {
 		t.Fatalf("油井收入 = %v, want %v", got, want)
 	}
