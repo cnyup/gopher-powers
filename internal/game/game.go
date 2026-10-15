@@ -363,7 +363,7 @@ type AttackAlert struct {
 }
 
 type pendingHit struct {
-	target any // *Unit 或 *Building
+	target targetEntity
 	amount float64
 	side   int
 	stun   float64

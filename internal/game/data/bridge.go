@@ -3,13 +3,13 @@ package data
 // BridgeBlocksDirectShot 对齐 bridge-fire.js:2-11：
 // 桥面挡住正处于同一桥面投影内的上下层直射；不改变沿桥航行或岸边射界。
 // source/target 为参与判定的实体（kind/type/x/y），units 为 UNITS 表。
-type shotEntity struct {
+type ShotEntity struct {
 	Kind string // "unit" / "building"
 	Type string
 	X, Y float64
 }
 
-func BridgeBlocksDirectShot(m *MapSpec, source, target shotEntity) bool {
+func BridgeBlocksDirectShot(m *MapSpec, source, target ShotEntity) bool {
 	if m.Water == nil || source.Kind != "unit" || target.Kind != "unit" {
 		return false
 	}
@@ -28,7 +28,7 @@ func BridgeBlocksDirectShot(m *MapSpec, source, target shotEntity) bool {
 		return false
 	}
 	water := m.Water
-	onDeck := func(e shotEntity) bool { return e.X >= water.X1 && e.X <= water.X2 }
+	onDeck := func(e ShotEntity) bool { return e.X >= water.X1 && e.X <= water.X2 }
 	if !onDeck(source) || !onDeck(target) {
 		return false
 	}

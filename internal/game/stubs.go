@@ -93,10 +93,10 @@ func (g *Game) updateBuilding(b *Building, dt float64) {
 		}
 		b.FireTimer -= dt
 		if b.FireTimer <= 0 {
-			target := g.closestEnemy(buildingAsTarget(b), 250, b.Owner)
+			target := g.ClosestEnemy(b, 250, b.Owner)
 			if target != nil {
-				b.Angle = atan2(targetY(target)-b.Y, targetX(target)-b.X)
-				g.fire(buildingAsTarget(b), target, 26, "turret")
+				b.Angle = atan2(target.getY()-b.Y, target.getX()-b.X)
+				g.Fire(b, target, 26, "turret")
 				b.FireTimer = 0.9
 			}
 		}
@@ -321,19 +321,6 @@ func (g *Game) updateFreight(u *Unit, dt float64) {
 		}
 		g.moveUnit(u, exit, dt, 18)
 	}
-}
-
-func (g *Game) applyHit(h pendingHit) {
-	// 1f-3 完整化。
-}
-
-func (g *Game) fire(source any, target any, amount float64, style string) {
-	// 1f-3 完整化。
-}
-
-func (g *Game) closestEnemy(source any, rangeLimit float64, owner int) any {
-	// 1f-3 完整化。
-	return nil
 }
 
 // --- AI（Wave 1f-4）---
