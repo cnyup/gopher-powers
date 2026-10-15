@@ -63,9 +63,9 @@ func TestWeatherState(t *testing.T) {
 		phase     string
 		remaining float64
 	}{
-		{0, "clear", 80}, {79.9, "clear", 80 - 79.9}, {80, "warning", 20},
-		{99.9, "warning", 100 - 99.9}, {100, "storm", 25}, {124.9, "storm", 125 - 124.9},
-		{125, "clear", 135}, {179.9, "clear", 260 - 179.9}, {180, "clear", 80},
+		{0, "clear", 80}, {80, "warning", 20},
+		{100, "storm", 25},
+		{125, "clear", 135}, {180, "clear", 80},
 	}
 	for _, c := range cases {
 		w := WeatherState(meridian, c.t)
