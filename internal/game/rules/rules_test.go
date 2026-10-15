@@ -6,18 +6,18 @@ import (
 	gpdata "github.com/cnyup/gopher-powers/internal/game/data"
 )
 
-// 对齐 tactical-rules.js:4-7 装甲朝向三档。
+// 对齐 tactical-rules.js:4-7：facing = cos(atan2(sy-ty,sx-tx) - target.angle)。
+// 源在目标正西（sx<tx，目标朝东 angle=0）→ angle=π → 后部 1.18。
 func TestArmorFacing(t *testing.T) {
-	// 源在目标正东（angle=π，目标朝向 0）→ cos(π)=-1 < -.5 → 后部 1.18。
-	if f := ArmorFacing(200, 0, 0, 0, 0); f.Multiplier != 1.18 || f.Name != "后部装甲" {
+	if f := ArmorFacing(0, 0, 100, 0, 0); f.Multiplier != 1.18 || f.Name != "后部装甲" {
 		t.Errorf("后部判定错: %+v", f)
 	}
-	// 源与目标同向（angle=0）→ 正面 0.82。
-	if f := ArmorFacing(0, 0, 100, 0, 0); f.Multiplier != .82 || f.Name != "正面装甲" {
+	// 源在目标正东（sx>tx，目标朝东）→ angle=0 → 正面 0.82。
+	if f := ArmorFacing(200, 0, 100, 0, 0); f.Multiplier != .82 || f.Name != "正面装甲" {
 		t.Errorf("正面判定错: %+v", f)
 	}
-	// 源在目标正北（angle=π/2）→ cos(π/2)≈0 → 侧面 1。
-	if f := ArmorFacing(0, 100, 0, 0, 0); f.Multiplier != 1 || f.Name != "侧面装甲" {
+	// 源在目标正北 → angle=π/2 → 侧面 1。
+	if f := ArmorFacing(100, 200, 100, 100, 0); f.Multiplier != 1 || f.Name != "侧面装甲" {
 		t.Errorf("侧面判定错: %+v", f)
 	}
 }
@@ -39,10 +39,10 @@ func TestTacticalDamage(t *testing.T) {
 			t.Errorf("%s 打掩体 = %v, want 1", src, f)
 		}
 	}
-	// tank 打 tank（非掩体）→ 朝向因子生效：正面 0.82。
+	// tank 打 tank（非掩体）：源 (0,0) 在目标 (100,0) 正西 → 后部 1.18。
 	tankTarget := CombatTarget{Kind: "unit", Type: "tank", X: 100, Y: 0}
-	if f := TacticalDamage(m, "tank", 0, 0, tankTarget, 0); f != .82 {
-		t.Errorf("tank 正面 = %v, want 0.82", f)
+	if f := TacticalDamage(m, "tank", 0, 0, tankTarget, 0); f != 1.18 {
+		t.Errorf("tank 后部 = %v, want 1.18", f)
 	}
 	// 非 armor 目标不吃朝向。
 	rifleTarget := CombatTarget{Kind: "unit", Type: "rifle", X: 5000, Y: 5000}
