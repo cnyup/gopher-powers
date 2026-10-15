@@ -1,7 +1,7 @@
-# 构建产物
-gopher-powers
-gopher-powers-*
-parity-replay
+# 构建产物（锚定仓库根，避免误杀 cmd/parity-replay 源码目录）
+/gopher-powers
+/gopher-powers-*
+/parity-replay
 /dist/
 /web/dist/
 *.exe
