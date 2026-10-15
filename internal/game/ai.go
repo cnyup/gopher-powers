@@ -284,6 +284,8 @@ func (g *Game) updateAI(side int) {
 	if g.EconomyMode == "mining" && harvesters+pendingHarvesters < 2 && p.Credits > 450 {
 		g.queueAIUnit("harvester", side)
 	}
+	// 间谍/资源情报调度（对齐 game.js:1234 updateIntelligenceAI）。
+	g.updateIntelligenceAI(side)
 	// 工程师占领。
 	type siteRef struct {
 		id    string

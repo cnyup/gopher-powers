@@ -232,13 +232,25 @@ func FindPath(sx, sy, ex, ey int, grid *Grid) []Node {
 	return []Node{}
 }
 
+// octile 对齐 pathfinding 库 Heuristic.octile 的精确求值序：
+// F = √2−1; (dx < dy) ? F*dx + dy : F*dy + dx。
+// 注意 1：不能代数化简为 (dx-dy)+√2*dy——浮点舍入不同（1ulp）。
+// 注意 2：乘加必须拆成两条语句——arm64 上 Go 会把 f*dy+dx 融合成 FMA
+// （单次舍入），与 JS 的两次舍入结果不同（第三次踩坑，机制记入注释）。
+//go:noinline
+func octMulAdd(f, m float64) float64 { return f * m }
+
 func octile(x, y, tx, ty int) float64 {
 	dx := math.Abs(float64(x - tx))
 	dy := math.Abs(float64(y - ty))
-	if dx > dy {
-		return (dx - dy) + sqrt2*dy
+	s := math.Sqrt2 // 拆两条语句：单表达式 math.Sqrt2-1 会被编译器常量折叠
+	f := s - 1      // 到任意精度（0.…503），与 JS 运行时 IEEE754（0.…515）位级不同。
+	if dx < dy {
+		m := octMulAdd(f, dx)
+		return m + dy
 	}
-	return (dy - dx) + sqrt2*dx
+	m := octMulAdd(f, dy)
+	return m + dx
 }
 
 // CompressPath 对齐 PF.Util.compressPath：仅保留方向变化点（含首尾）。

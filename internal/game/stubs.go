@@ -7,10 +7,6 @@ import (
 	gpdata "github.com/cnyup/gopher-powers/internal/game/data"
 )
 
-// --- intelligence（Wave 1f-3 完整实现，先空转）---
-
-func (g *Game) UpdateIntelligence(dt float64) {}
-
 // --- modern-combat（Wave 1d 完整实现，先空转）---
 
 func (g *Game) updateElectronicWarfare(dt float64) { g.updateElectronicWarfareFull(dt) }

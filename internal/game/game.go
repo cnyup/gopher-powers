@@ -35,6 +35,7 @@ type Order struct {
 	DestinationY  float64 `json:"destinationY,omitempty"`
 	Progress      float64 `json:"progress,omitempty"`
 	HomeID        int     `json:"homeId,omitempty"`
+	SiteID        string  `json:"-"` // collect 指令的字符串资源点 id
 }
 
 // Unit 对齐 addUnit 产出的单位对象（字段名即 JSON 序列化名，协议兼容锚点）。
