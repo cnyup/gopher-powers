@@ -144,45 +144,63 @@ func (g *Game) updateBuilding(b *Building, dt float64) {
 		}
 		unit := g.AddUnit(b.Owner, typ, spawn.X, spawn.Y, false)
 		gmetric(g, b.Owner, "unitsProduced", 1)
+		// 出厂滑行 + 出口推进（对齐源 updateBuilding 尾段；exit 复用上方声明）。
+		var goal Point
+		if gpdata.HasTag(typ, "ship") {
+			ng := g.navalGoal(spawn.X+exit.Side*exit.Distance, spawn.Y, unitRadiusOf(typ))
+			goal = ng
+		} else {
+			fwdX := exit.Side
+			fwdY := 0.0
+			if exit.ForwardX != 0 || exit.ForwardY != 0 {
+				fwdX, fwdY = exit.ForwardX, exit.ForwardY
+			}
+			if sp := g.findSpawn(spawn.X+fwdX*exit.Distance, spawn.Y+fwdY*exit.Distance, typ); sp != nil {
+				goal = *sp
+			} else {
+				goal = Point{spawn.X, spawn.Y}
+			}
+		}
+		unit.Deployment = &Deployment{BuildingID: b.ID, Start: g.Time, Until: g.Time + 2.6, FromX: spawn.X, FromY: spawn.Y, X: goal.X, Y: goal.Y}
+		unit.Angle = exit.Angle
+		unit.TurretAngle = exit.Angle
+		b.ExitUntil = g.Time + 2.6
+		// AI 初始指令（对齐源：engineer 占点 / scout 探桥 / jet 前压 / ship 出港 / 其他推进）。
+		if g.IsAI(b.Owner) {
+			switch {
+			case typ == "engineer":
+				// 就近可占点。
+				var site *Site
+				bestD := 1e18
+				for _, ss := range append(append([]*Site{}, g.Oil...), g.Beacons...) {
+					if ss.Owner != b.Owner && g.HasExploredFor(b.Owner, ss.X, ss.Y) {
+						if dd := Distance(ss.X, ss.Y, unit.X, unit.Y); dd < bestD {
+							bestD, site = dd, ss
+						}
+					}
+				}
+				if site != nil {
+					unit.Order = &Order{Type: "capture", X: site.X, Y: site.Y}
+				}
+			case typ == "scout" || typ == "ghost":
+				unit.Order = &Order{Type: "move", X: g.World.Width/2 + 70 + g.Random(-100, 100), Y: g.HomeY + g.Random(-280, 280)}
+			case gpdata.HasTag(typ, "jet"):
+				unit.Order = &Order{Type: "attackMove", X: 470 + g.Random(-110, 110), Y: g.HomeY + g.Random(-240, 240)}
+			case gpdata.HasTag(typ, "ship"):
+				unit.Order = &Order{Type: "attackMove", X: g.Map.Water.X1 + unitRadiusOf(typ) + 40, Y: g.HomeY + g.Random(-290, 290)}
+			case typ != "harvester":
+				unit.Order = &Order{Type: "move", X: g.World.Width - 630 + g.Random(-70, 70), Y: g.HomeY + g.Random(-120, 120)}
+			}
+		}
+		if b.RallyPoint != nil && typ != "harvester" {
+			goal2 := g.ResolveMoveGoal(unit, b.RallyPoint.X, b.RallyPoint.Y)
+			unit.Order = &Order{Type: "move", X: goal2.X, Y: goal2.Y}
+		}
 		b.Active = nil
-		_ = unit // 出厂滑行/AI 初始指令在 1f-4 完整化。
 	}
 }
 
 // --- 移动/战斗（Wave 1f-2 完整实现，桩最小化）---
-
-func (g *Game) updateUnit(u *Unit, dt float64) {
-	// 对齐 game.js L643 起的巨型方法；分批实现。
-	// 1f-2 先处理：deployment 滑行、临时单位到期、freight、基础 fireTimer。
-	if u.Deployment != nil {
-		if g.Time >= u.Deployment.Until || Distance(u.X, u.Y, u.Deployment.X, u.Deployment.Y) <= 9 {
-			u.Deployment = nil
-			u.Path = nil
-			u.PathTimer = 0
-		} else if g.Time >= u.StunUntil {
-			g.moveUnit(u, Point{u.Deployment.X, u.Deployment.Y}, dt, 8)
-			return
-		}
-	}
-	if u.TemporaryUntil != 0 && g.Time >= u.TemporaryUntil {
-		u.HP = 0
-		return
-	}
-	if u.Type == "freightPlane" || u.Type == "containerShip" {
-		g.updateFreight(u, dt)
-		return
-	}
-	if g.Time < u.StunUntil {
-		return
-	}
-	jamFactor := 1.0
-	if u.JammedUntil > g.Time {
-		jamFactor = .4
-	}
-	u.FireTimer -= dt * jamFactor
-	// 战斗/指令分支在 1f-2/1f-3 完整化。
-	_ = jamFactor
-}
 
 func (g *Game) moveUnit(u *Unit, goal Point, dt float64, stopDistance float64) {
 	u.MotionGoal = &Point{goal.X, goal.Y}
@@ -296,37 +314,6 @@ func (g *Game) navalGoal(x, y, radius float64) Point {
 	return Point{clamp(x, w.X1+radius, w.X2-radius), clamp(y, w.Y1+radius, w.Y2-radius)}
 }
 
-func (g *Game) updateFreight(u *Unit, dt float64) {
-	// 完整版在 logistics 深化；最小闭环：入境→出境。
-	f := u.Freight
-	if f == nil {
-		u.HP = 0
-		return
-	}
-	if g.Time < u.StunUntil {
-		return
-	}
-	if f.Phase == "outbound" {
-		exit := f.Entry
-		if u.Type == "freightPlane" {
-			dx := 220.0
-			if u.Owner != 0 {
-				dx = -220
-			}
-			exit.X = clamp(f.Entry.X+dx, 90, g.World.Width-90)
-		}
-		if Distance(u.X, u.Y, exit.X, exit.Y) < 24 {
-			u.HP = 0
-			return
-		}
-		g.moveUnit(u, exit, dt, 18)
-	}
-}
-
-// --- AI（Wave 1f-4）---
-
-// --- 工具 ---
-
 func unitLayerOf(typ string) string {
 	switch {
 	case hasTag(typ, "jet"):
@@ -437,3 +424,7 @@ func targetY(e any) float64 {
 }
 
 func buildingAsTarget(b *Building) *Building { return b }
+
+func (g *Game) updateFreight(u *Unit, dt float64) { g.updateFreightFull(u, dt) }
+
+func (g *Game) updateUnit(u *Unit, dt float64) { g.updateUnitFull(u, dt) }

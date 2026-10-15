@@ -1,0 +1,13 @@
+{
+  "factionA": "china",
+  "factionB": "russia",
+  "options": { "difficulty": "standard" },
+  "ticks": 1800,
+  "commands": [
+    { "atTick": 0, "action": "build", "unitType": "power" },
+    { "atTick": 200, "action": "build", "unitType": "refinery" },
+    { "atTick": 500, "action": "train", "unitType": "rifle" },
+    { "atTick": 600, "action": "train", "unitType": "rifle" },
+    { "atTick": 700, "action": "train", "unitType": "tank" }
+  ]
+}
