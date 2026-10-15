@@ -325,11 +325,6 @@ func (g *Game) updateFreight(u *Unit, dt float64) {
 
 // --- AI（Wave 1f-4）---
 
-func (g *Game) updateAI(side int)    {}
-func (g *Game) launchAIWave(side int) {}
-
-func (g *Game) placeAIBuilding(typ string, side int) {}
-
 // --- 工具 ---
 
 func unitLayerOf(typ string) string {
