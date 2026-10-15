@@ -100,7 +100,7 @@ func TestGoldenComplexObstacles(t *testing.T) {
 	for x := 5; x < 10; x++ {
 		g.SetWalkableAt(x, 6, false)
 	}
-	got := find(t, 0, 7, 11, 0)
+	got := CompressPath(FindPath(0, 7, 11, 0, g))
 	if got[0] != (Node{0, 7}) || got[len(got)-1] != (Node{11, 0}) {
 		t.Fatalf("S6 端点错误: %v", got)
 	}
