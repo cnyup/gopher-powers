@@ -85,19 +85,16 @@ func (g *Game) UpdateIntelligence(dt float64) {
 			p.CyberLockedUntil = 0
 		}
 	}
-	// 指令执行（infiltrate/defuse/collect 的单位侧行为）。
-	for _, u := range g.Units {
-		if u.HP > 0 {
-			g.intelligenceOrder(u, dt)
-		}
-	}
+	// 注意：infiltrate/defuse/collect 的单位侧执行在 updateUnit（updateSpecialOrder，
+	// game.js:652），不在本函数——采集收入的入账时点影响 buildQueue 扣费判定。
 }
 
-// intelligenceOrder 对齐 intelligence.js orderHandling 段（44-77 行）。
-func (g *Game) intelligenceOrder(u *Unit, dt float64) {
+// updateSpecialOrder 对齐 intelligence.js:45 updateSpecialOrder（game.js:652 调用）。
+// 返回 true 表示本 tick 该单位行为已被特殊指令接管。
+func (g *Game) updateSpecialOrder(u *Unit, dt float64) bool {
 	o := u.Order
 	if o == nil || (o.Type != "infiltrate" && o.Type != "defuse" && o.Type != "collect") {
-		return
+		return false
 	}
 	var target interface {
 		getX() float64
@@ -124,7 +121,7 @@ func (g *Game) intelligenceOrder(u *Unit, dt float64) {
 	if bTgt == nil && site == nil {
 		u.Order = nil
 		u.Path = nil
-		return
+		return true
 	}
 	tx, ty := o.X, o.Y
 	reach := 34.0
@@ -137,10 +134,10 @@ func (g *Game) intelligenceOrder(u *Unit, dt float64) {
 	if Distance(u.X, u.Y, tx, ty) > reach {
 		o.Progress = 0
 		g.moveUnit(u, Point{tx, ty}, dt, reach-4)
-		return
+		return true
 	}
 	if g.Time-u.LastDamageAt < 1 {
-		return
+		return true
 	}
 	switch o.Type {
 	case "infiltrate":
@@ -159,7 +156,7 @@ func (g *Game) intelligenceOrder(u *Unit, dt float64) {
 		for _, v := range g.EnemyUnits(u.Owner, "") {
 			if v.Order != nil && v.Order.Type == "collect" && v.Order.TargetID == o.TargetID && v.Order.SiteID == o.SiteID &&
 				Distance(v.X, v.Y, tx, ty) <= reach {
-				return
+				return true
 			}
 		}
 		rate := 45.0
@@ -182,6 +179,7 @@ func (g *Game) intelligenceOrder(u *Unit, dt float64) {
 			u.Path = nil
 		}
 	}
+	return true
 }
 
 // nearestEnemySide 对齐 game.js nearestEnemySide（六方取基地距离最近敌席；双人=1-side）。

@@ -53,7 +53,12 @@ func (g *Game) updateUnitFull(u *Unit, dt float64) {
 		g.updateFreightFull(u, dt)
 		return
 	}
-	// 特殊指令（潜入/拆弹/回收）在 intelligence 批接入；此处占位跳过。
+	// 特殊指令（潜入/拆弹/回收）——对齐 game.js:652 updateSpecialOrder：
+	// 在 updateUnit 内、玩家循环（buildQueue 扣费）之后执行，采集收入的入账
+	// 时点因此晚一拍，直接影响 buildQueue 的 credits 判定（对拍 tick1335 铁证）。
+	if g.Time >= u.StunUntil && g.updateSpecialOrder(u, dt) {
+		return
+	}
 	if g.Time < u.StunUntil {
 		return
 	}
