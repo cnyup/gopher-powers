@@ -34,10 +34,18 @@ export class NetClient {
   private emit(m: ServerMsg) { this.handlers.forEach(h => h(m)); }
 
   async session(): Promise<void> {
-    const res = await fetch('/api/session');
-    const data = await res.json();
-    this.user = data.user;
-    this.room = data.room;
+    let res = await fetch('/api/session');
+    let data = await res.json();
+    if (!data.user) {
+      // 无 cookie 首访：建匿名号（服务器下 Set-Cookie），再回读。
+      res = await fetch('/api/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '指挥官' }),
+      });
+      data = await res.json();
+    }
+    this.user = data.user ?? null;
+    this.room = data.room ?? null;
   }
 
   async rename(name: string): Promise<void> {

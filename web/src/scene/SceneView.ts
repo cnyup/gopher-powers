@@ -35,8 +35,12 @@ export class SceneView {
     sun.position.set(600, 1400, 400);
     this.scene.add(sun, new THREE.AmbientLight(0x8899bb, 0.55));
     this.createGround();
+    this.createFogLayer(this.world.width, this.world.height);
     this.createMarker();
     canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointermove', ev => this.updateGhost(ev));
+    canvas.addEventListener('keydown', () => {});
+    canvas.tabIndex = 0;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
   }
 
@@ -51,6 +55,42 @@ export class SceneView {
     const grid = new THREE.GridHelper(Math.max(this.world.width, this.world.height), 60, 0x1d2a36, 0x16212b);
     grid.position.set(this.world.width / 2, 0.2, this.world.height / 2);
     this.scene.add(grid);
+  }
+
+  private fogCanvas = document.createElement('canvas');
+  private fogMesh!: THREE.Mesh;
+  private fogCell = 80; // 迷雾格边长（world.fog=80）
+
+  private createFogLayer(w: number, h: number) {
+    this.fogCanvas.width = Math.ceil(w / this.fogCell);
+    this.fogCanvas.height = Math.ceil(h / this.fogCell);
+    const tex = new THREE.CanvasTexture(this.fogCanvas);
+    tex.magFilter = THREE.NearestFilter;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: .92, depthWrite: false });
+    this.fogMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    this.fogMesh.rotation.x = -Math.PI / 2;
+    this.fogMesh.position.set(w / 2, 1.2, h / 2);
+    this.scene.add(this.fogMesh);
+    this.paintFog(null);
+  }
+
+  /** 迷雾绘制：visible=透明 / explored=半暗 / 未知=全黑。 */
+  paintFog(fog: { cols: number; rows: number; visible: Uint8Array; explored: Uint8Array } | null) {
+    const ctx = this.fogCanvas.getContext('2d')!;
+    const w = this.fogCanvas.width, h = this.fogCanvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#060a0f';
+    ctx.fillRect(0, 0, w, h);
+    if (fog && fog.cols === w && fog.rows === h) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (fog.explored[i]) {
+          ctx.fillStyle = fog.visible[i] ? 'rgba(6,10,15,0)' : 'rgba(6,10,15,0.55)';
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    (this.fogMesh.material as THREE.MeshBasicMaterial).map!.needsUpdate = true;
   }
 
   private createMarker() {
@@ -133,6 +173,18 @@ export class SceneView {
         }
       }
     }
+    if (view?.fog) {
+      // 解包 base64 迷雾位并绘制。
+      const bin = atob(view.fog.bits);
+      const cols = view.fog.cols, rows = view.fog.rows;
+      const visible = new Uint8Array(cols * rows), explored = new Uint8Array(cols * rows);
+      for (let i = 0; i < cols * rows; i++) {
+        const b = bin.charCodeAt(i >> 2);
+        visible[i] = b & (2 << ((i % 4) * 2)) ? 1 : 0;
+        explored[i] = b & (1 << ((i % 4) * 2)) ? 1 : 0;
+      }
+      this.paintFog({ cols, rows, visible, explored });
+    }
   }
 
   private groundPoint(ev: PointerEvent): THREE.Vector3 | null {
@@ -156,6 +208,15 @@ export class SceneView {
       }
       return;
     }
+    if (ev.button === 0 && this.placingType) {
+      const p = this.groundPoint(ev);
+      if (p) {
+        const t = this.placingType;
+        this.cancelPlace();
+        this.onPlace?.(t, p.x, p.z);
+      }
+      return;
+    }
     if (ev.button === 0) {
       const rect = this.renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
@@ -172,11 +233,40 @@ export class SceneView {
     }
   };
 
+  private ghost: THREE.Mesh | null = null;
+  placingType: string | null = null;
+  onPlace: ((type: string, x: number, y: number) => void) | null = null;
+
+  private updateGhost(ev: PointerEvent) {
+    if (!this.placingType) { this.clearGhost(); return; }
+    const p = this.groundPoint(ev);
+    if (!p) return;
+    if (!this.ghost) {
+      const size = { power: 66, refinery: 84, barracks: 66, factory: 88 }[this.placingType] ?? 66;
+      this.ghost = new THREE.Mesh(
+        new THREE.BoxGeometry(size, 14, size),
+        new THREE.MeshBasicMaterial({ color: 0x6ad48f, transparent: true, opacity: .45 }),
+      );
+      this.scene.add(this.ghost);
+    }
+    this.ghost.position.set(p.x, 7, p.z);
+  }
+
+  clearGhost() {
+    if (this.ghost) { this.scene.remove(this.ghost); this.ghost = null; }
+  }
+
+  beginPlace(type: string) { this.placingType = type; }
+  cancelPlace() { this.placingType = null; this.clearGhost(); }
+
   flashMarker(x: number, z: number) {
     this.marker.position.set(x, .6, z);
     this.marker.visible = true;
     window.setTimeout(() => { this.marker.visible = false; }, 900);
   }
+
+  /** ESC 取消放置（由 Battle 绑定 document）。 */
+  cancel() { this.cancelPlace(); }
 
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);

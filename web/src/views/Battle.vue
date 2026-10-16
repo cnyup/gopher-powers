@@ -12,12 +12,16 @@ let raf = 0;
 
 const v = computed(() => props.view);
 const me = computed(() => v.value?.players?.[0] ?? null);
+const pending = computed<string | null>(() => me.value?.readyBuilding || null);
+const placing = ref<string | null>(null);
 const units = computed(() => (v.value?.units ?? []) as any[]);
 
 onMounted(() => {
   if (!canvas.value) return;
   scene = new SceneView(canvas.value);
   scene.onSelectChange = ids => { selection.value = ids; };
+  scene.onPlace = (type, x, y) => place(type, x, y);
+  watch(placing, p => { if (p) scene?.beginPlace(p); else scene?.cancelPlace(); });
   scene.onGroundClick = (x, y) => {
     if (selection.value.length) {
       props.net.command('move', { x, y, selected: selection.value });
@@ -40,8 +44,17 @@ onUnmounted(() => { cancelAnimationFrame(raf); scene = null; });
 watch(() => props.view, view => scene?.syncView(view));
 
 function train(type: string) { props.net.command('train', { unitType: type }); }
-function build(type: string) { props.net.command('build', { unitType: type }); }
+function build(type: string) {
+  // 已有待放建筑时先切换目标；完成建造（readyBuilding 非空）时进入放置模式。
+  props.net.command('build', { unitType: type });
+}
+function place(type: string, x: number, y: number) { props.net.command('place', { unitType: type, x, y }); placing.value = null; }
 function stop() { if (selection.value.length) props.net.command('stop', { selected: selection.value }); }
+// readyBuilding 就绪 → 点击「放置」按钮进入落位模式（或直接自动进入）。
+watch(pending, p => { if (p && !placing.value) placing.value = p; });
+const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { placing.value = null; scene?.cancel(); } };
+onMounted(() => document.addEventListener('keydown', esc));
+onUnmounted(() => document.removeEventListener('keydown', esc));
 </script>
 
 <template>
@@ -65,6 +78,8 @@ function stop() { if (selection.value.length) props.net.command('stop', { select
         </div>
         <div class="panel">
           <h3>建造</h3>
+          <div class="placing-hint" v-if="placing">放置中：{{ placing }}（ESC 取消）</div>
+          <div class="placing-hint dim" v-else-if="me?.buildQueue">建造中：{{ me.buildQueue.type }} {{ Math.round((me.buildQueue.progress ?? 0) * 100) }}%</div>
           <button @click="build('power')">发电站</button>
           <button @click="build('refinery')">精炼厂</button>
           <button @click="build('barracks')">兵营</button>
@@ -101,5 +116,6 @@ aside { width: 210px; padding: 12px; border-left: 1px solid #1d2c40; display: fl
 .panel { background: #121a24; border: 1px solid #24344a; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .panel h3 { font-size: 12px; color: #7f97ad; margin-bottom: 4px; font-weight: 600; }
 .roster { flex: 1; min-height: 0; }
+.placing-hint { font-size: 12px; color: #6ad48f; } .placing-hint.dim { color: #d8b65a; }
 .ro { font-size: 12px; color: #9db4c8; }
 </style>

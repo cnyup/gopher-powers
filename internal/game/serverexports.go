@@ -79,3 +79,8 @@ func (g *Game) SellHarvester(side, id int) bool {
 func (g *Game) RequestResupplyDirect(u *Unit) bool {
 	return g.RequestResupplyFull(u, nil)
 }
+
+// CanPlacePublic 对齐 canPlace（前端放置预检用；服务端 place 仍独立校验）。
+func (g *Game) CanPlacePublic(side int, typ string, x, y float64) bool {
+	return g.CanPlace(side, typ, x, y)
+}
