@@ -301,6 +301,10 @@ func (g *Game) tacticalFactor(u *Unit, target targetEntity) float64 {
 
 // Fire 对齐 game.js L881-915（特效 + 命中收集 + 溅射）。
 func (g *Game) Fire(source targetEntity, target targetEntity, amount float64, style string) {
+	// 对齐 game.js:888——开火即写 lastFireAt（supply 索敌的脱战判定依赖它）。
+	if su, ok := source.(*Unit); ok {
+		su.LastFireAt = g.Time
+	}
 	// 弹道型在 1d launchProjectile 完整化；此处直射路径。
 	g.Effects = append(g.Effects, &Effect{
 		Type: "shot", SourceID: source.getID(), X: source.getX(), Y: source.getY(),

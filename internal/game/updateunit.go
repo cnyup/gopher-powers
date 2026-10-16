@@ -422,26 +422,52 @@ func (g *Game) updateSupply(u *Unit, dt float64) {
 		}
 		u.Order = nil
 	}
-	// 自动补给：搜需服务的友军并靠近（对齐源 updateSupply 目标搜索段）。
+	// 自动补给：对齐 modern-combat.js:300-313（锁定保持/1.5s 搜索节流/距离排序/
+	// range 内直选或寻路可达/taken 跳过/移动条件）。
 	if (u.AutoSupply == nil || *u.AutoSupply) && (p.Credits > 0 || g.HasPower(u.Owner)) {
+		supplyRange := gpdata.UNITS["supply"].Range
+		eligible := func(v *Unit) bool {
+			return v != u && !gpdata.HasTag(v.Type, "air") && !gpdata.HasTag(v.Type, "ship") && v.Type != "harvester"
+		}
+		needs := func(v *Unit) bool {
+			if !eligible(v) {
+				return false
+			}
+			if p.Credits > 0 && (v.HP < v.MaxHP-.01 ||
+				(!g.IsRobot(v.Type) && gpdata.UNITS[v.Type].Ammo > 0 && v.Ammo != nil && *v.Ammo < gpdata.UNITS[v.Type].Ammo)) {
+				return true
+			}
+			return g.IsRobot(v.Type) && v.Order != nil && v.Order.Type == "rearm" && v.Battery != nil && *v.Battery < 100 && g.HasPower(u.Owner)
+		}
 		var target *Unit
 		if u.ServiceTargetID != 0 {
-			if t := g.GetUnit(u.ServiceTargetID); t != nil && t.Owner == u.Owner && t.HP > 0 && t.EmbarkedIn == 0 {
+			if t := g.GetUnit(u.ServiceTargetID); t != nil && t.Owner == u.Owner && t.HP > 0 && needs(t) {
 				target = t
 			}
 		}
-		if target == nil {
-			var best *Unit
-			bestD := 1e18
+		if target == nil && g.Time >= u.ServiceSearchAt {
+			u.ServiceSearchAt = g.Time + 1.5
+			var candidates []*Unit
 			for _, v := range g.ActiveUnits(u.Owner, "") {
-				if v == u || gpdata.HasTag(v.Type, "air") || gpdata.HasTag(v.Type, "ship") || v.Type == "harvester" {
-					continue
+				if needs(v) && g.Time-v.LastDamageAt > 3 && g.Time-v.LastFireAt > 3 {
+					candidates = append(candidates, v)
 				}
-				needs := (v.HP < v.MaxHP-.01) || (gpdata.UNITS[v.Type].Ammo > 0 && v.Ammo != nil && *v.Ammo < gpdata.UNITS[v.Type].Ammo)
-				if !needs || g.Time-v.LastDamageAt <= 3 || g.Time-v.LastFireAt <= 3 {
-					continue
+			}
+			// 距离排序，tie 用 id（JS sort 稳定序：distance || a.id - b.id）。
+			for i := 1; i < len(candidates); i++ {
+				for j := i; j > 0; j-- {
+					a, b := candidates[j-1], candidates[j]
+					da := Distance(u.X, u.Y, a.X, a.Y)
+					db := Distance(u.X, u.Y, b.X, b.Y)
+					if db < da || (db == da && b.ID < a.ID) {
+						candidates[j-1], candidates[j] = b, a
+					} else {
+						break
+					}
 				}
-				// 别的补给车已锁定则跳过。
+			}
+			// 不派补给车追逐隔海、障碍后方或其他补给车已经服务的目标。
+			for _, v := range candidates {
 				taken := false
 				for _, s := range g.ActiveUnits(u.Owner, "supply") {
 					if s != u && s.ServiceTargetID == v.ID && (s.AutoSupply == nil || *s.AutoSupply) {
@@ -452,20 +478,26 @@ func (g *Game) updateSupply(u *Unit, dt float64) {
 				if taken {
 					continue
 				}
-				if dd := Distance(u.X, u.Y, v.X, v.Y); dd < bestD {
-					best, bestD = v, dd
+				if Distance(u.X, u.Y, v.X, v.Y) < supplyRange {
+					target = v
+					break
+				}
+				path := g.findPath(u, Point{v.X, v.Y}, supplyRange*.75, nil)
+				if len(path) > 0 && Distance(path[len(path)-1].X, path[len(path)-1].Y, v.X, v.Y) <= supplyRange {
+					target = v
+					break
 				}
 			}
-			target = best
 		}
 		if target != nil {
 			u.ServiceTargetID = target.ID
-			if Distance(u.X, u.Y, target.X, target.Y) >= gpdata.UNITS["supply"].Range*.85 && g.Time-target.LastDamageAt > 3 && g.Time-target.LastFireAt > 3 {
-				g.moveUnit(u, Point{target.X, target.Y}, dt, gpdata.UNITS["supply"].Range*.75)
-				return
-			}
 		} else {
 			u.ServiceTargetID = 0
+		}
+		if target != nil && Distance(u.X, u.Y, target.X, target.Y) >= supplyRange*.85 &&
+			g.Time-target.LastDamageAt > 3 && g.Time-target.LastFireAt > 3 {
+			g.moveUnit(u, Point{target.X, target.Y}, dt, supplyRange*.75)
+			return
 		}
 	}
 	if g.Time-u.LastMovedAt < .5 {
