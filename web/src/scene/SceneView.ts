@@ -1,6 +1,8 @@
 // scene/SceneView.ts：Three.js 战场最小闭环——快照驱动（地形/单位/建筑/迷雾覆盖/选区/指令）。
 // 模型工厂平移（model-craft 等 30+ 模块）后续波次以 adapter 注入替换基本体。
 import * as THREE from 'three';
+import { prepareVisualAssets, createModel } from './models/visual-assets.js';
+import { equipmentModel, teamColor } from './equipmentModel';
 
 export interface EntityLike {
   id: number; type: string; owner: number;
@@ -21,6 +23,10 @@ export class SceneView {
   onSelectChange: ((ids: number[]) => void) | null = null;
   onGroundClick: ((x: number, y: number) => void) | null = null;
   private world = { width: 3360, height: 2160 };
+  private assetsReady = false;
+  private assetsLoading: Promise<void> | null = null;
+  assetError = '';
+  faction = 'china'; // 己方阵营（battle 消息 config 同步）
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -103,6 +109,22 @@ export class SceneView {
     this.scene.add(this.marker);
   }
 
+  /** 载入 GLB 模型库（45MB，异步；就绪前基本体兜底渲染）。 */
+  loadAssets(): Promise<void> {
+    if (!this.assetsLoading) {
+      this.assetsLoading = prepareVisualAssets().then(() => {
+        this.assetsReady = true;
+        // 就绪前已用基本体兜底的单位/建筑，清缓存待下帧重建为真模型。
+        for (const [, m] of this.unitMeshes) this.scene.remove(m);
+        for (const [, m] of this.buildingMeshes) this.scene.remove(m);
+        this.unitMeshes.clear();
+        this.buildingMeshes.clear();
+        this.pickables = this.pickables.filter(o => !o.userData?.id);
+      }).catch((e) => { this.assetError = String(e); });
+    }
+    return this.assetsLoading!;
+  }
+
   /** 世界坐标（模拟 y → three z）。 */
   private toScene(x: number, y: number): [number, number] {
     return [x, y];
@@ -134,15 +156,29 @@ export class SceneView {
         let m = this.unitMeshes.get(u.id);
         const [x, z] = this.toScene(u.x, u.y);
         if (!m) {
-          m = new THREE.Mesh(this.shapeFor({ ...u } as EntityLike & { kind: string }), this.matFor(u.owner));
-          m.userData = { id: u.id, kind: 'unit' };
+          const holder = new THREE.Group();
+          holder.userData = { id: u.id, kind: 'unit' };
+          if (this.assetsReady) {
+            try {
+              const model = createModel(equipmentModel(this.faction, u.type), teamColor(u.owner));
+              model.scale.setScalar(0.3);
+              holder.add(model);
+            } catch { /* 库缺该型号时基本体兜底 */ }
+          }
+          if (holder.children.length === 0) {
+            const fallback = new THREE.Mesh(this.shapeFor({ ...u } as EntityLike & { kind: string }), this.matFor(u.owner));
+            holder.add(fallback);
+          }
+          // 拾取代理：不可见盒包住模型。
+          const proxy = new THREE.Mesh(this.shapeFor({ ...u } as EntityLike & { kind: string }), new THREE.MeshBasicMaterial({ visible: false }));
+          proxy.userData = { id: u.id, kind: 'unit' };
+          holder.add(proxy);
+          this.pickables.push(proxy);
+          m = holder as unknown as THREE.Mesh;
           this.scene.add(m);
-          this.pickables.push(m);
           this.unitMeshes.set(u.id, m);
         }
         m.position.set(x, 5, z);
-        m.lookAt(x + 1, 5, z);
-        (m.material as THREE.MeshStandardMaterial).color.set(u.owner === 0 ? 0x3f8f5f : 0xa04848);
       }
       for (const [id, m] of this.unitMeshes) {
         if (!seenU.has(id)) {
@@ -158,13 +194,27 @@ export class SceneView {
         let m = this.buildingMeshes.get(b.id);
         const [x, z] = this.toScene(b.x, b.y);
         if (!m) {
-          m = new THREE.Mesh(this.shapeFor({ ...b } as EntityLike & { kind: string }), this.matFor(b.owner));
-          m.userData = { id: b.id, kind: 'building' };
+          const holder = new THREE.Group();
+          holder.userData = { id: b.id, kind: 'building' };
+          if (this.assetsReady) {
+            try {
+              const model = createModel(equipmentModel(this.faction, b.type), teamColor(b.owner));
+              holder.add(model);
+            } catch { /* 基本体兜底 */ }
+          }
+          if (holder.children.length === 0) {
+            const fallback = new THREE.Mesh(this.shapeFor({ ...b } as EntityLike & { kind: string }), this.matFor(b.owner));
+            holder.add(fallback);
+          }
+          const proxy = new THREE.Mesh(this.shapeFor({ ...b } as EntityLike & { kind: string }), new THREE.MeshBasicMaterial({ visible: false }));
+          proxy.userData = { id: b.id, kind: 'building' };
+          holder.add(proxy);
+          this.pickables.push(proxy);
+          m = holder as unknown as THREE.Mesh;
           this.scene.add(m);
           this.buildingMeshes.set(b.id, m);
         }
         m.position.set(x, 8, z);
-        (m.material as THREE.MeshStandardMaterial).color.set(b.owner === 0 ? 0x4f7f9f : 0xa04848);
       }
       for (const [id, m] of this.buildingMeshes) {
         if (!seenB.has(id)) {

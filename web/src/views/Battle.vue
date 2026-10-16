@@ -19,6 +19,7 @@ const units = computed(() => (v.value?.units ?? []) as any[]);
 onMounted(() => {
   if (!canvas.value) return;
   scene = new SceneView(canvas.value);
+  scene.loadAssets(); // 45MB GLB 模型库异步载入，就绪后新单位/建筑自动切换真模型
   scene.onSelectChange = ids => { selection.value = ids; };
   scene.onPlace = (type, x, y) => place(type, x, y);
   watch(placing, p => { if (p) scene?.beginPlace(p); else scene?.cancelPlace(); });
@@ -41,7 +42,11 @@ onMounted(() => {
 });
 onUnmounted(() => { cancelAnimationFrame(raf); scene = null; });
 
-watch(() => props.view, view => scene?.syncView(view));
+watch(() => props.view, view => {
+  if (view?.players?.[0]?.faction && scene) scene.faction = view.players[0].faction;
+  if (scene?.assetError) console.warn('模型库载入失败：', scene.assetError);
+  scene?.syncView(view);
+});
 
 function train(type: string) { props.net.command('train', { unitType: type }); }
 function build(type: string) {
