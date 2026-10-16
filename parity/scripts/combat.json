@@ -1,0 +1,18 @@
+{
+  "factionA": "china",
+  "factionB": "russia",
+  "options": { "difficulty": "standard" },
+  "ticks": 2400,
+  "commands": [
+    { "atTick": 0, "action": "build", "unitType": "power" },
+    { "atTick": 200, "action": "build", "unitType": "refinery" },
+    { "atTick": 300, "action": "build", "unitType": "barracks" },
+    { "atTick": 500, "action": "train", "unitType": "rifle" },
+    { "atTick": 520, "action": "train", "unitType": "rifle" },
+    { "atTick": 540, "action": "train", "unitType": "rifle" },
+    { "atTick": 700, "action": "train", "unitType": "tank" },
+    { "atTick": 900, "action": "move", "x": 1200, "y": 720, "attackMove": true, "selected": [6, 7, 8, 9] },
+    { "atTick": 1300, "action": "train", "unitType": "tank" },
+    { "atTick": 1500, "action": "move", "x": 900, "y": 700, "attackMove": true, "selected": [6, 7, 8, 9, 23, 27, 29, 31] }
+  ]
+}

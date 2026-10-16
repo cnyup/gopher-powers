@@ -172,13 +172,14 @@ func (g *Game) updateUnitFull(u *Unit, dt float64) {
 		}
 		target = nil
 	}
+	// 对齐 game.js:706：acquisition = order.type !== 'move' ? (artillery? max(sight,range): sight) : range*0.85。
+	// 注意 order 为 nil 时 JS 的 `!== 'move'` 为真 → 走 sight 分支（警戒索敌），
+	// 只有显式 move 指令才用 range*0.85（行军中被打了才还手）。
 	acquisition := d.Sight
-	if u.Order != nil && u.Order.Type != "move" {
-		if gpdata.HasTag(u.Type, "artillery") {
-			acquisition = math.Max(d.Sight, d.Range)
-		}
-	} else {
+	if u.Order != nil && u.Order.Type == "move" {
 		acquisition = d.Range * 0.85
+	} else if gpdata.HasTag(u.Type, "artillery") {
+		acquisition = math.Max(d.Sight, d.Range)
 	}
 	if target == nil {
 		target = g.ClosestEnemy(u, acquisition, u.Owner)
