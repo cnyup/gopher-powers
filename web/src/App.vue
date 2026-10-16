@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // App：大厅/房间/战局三视图路由（依据 net 状态切换）。
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, provide } from 'vue';
 import { NetClient } from './net/client';
 import Lobby from './views/Lobby.vue';
 import Room from './views/Room.vue';
@@ -10,10 +10,15 @@ const net = new NetClient();
 const phase = ref<'lobby' | 'room' | 'battle'>('lobby');
 const view = ref<any>(null);
 const errorMsg = ref('');
+// NetClient 是普通实例——Vue 不追踪其字段；此处持响应式副本，消息驱动同步。
+const user = ref(net.user);
+const room = ref(net.room);
 
+const sync = () => { user.value = net.user; room.value = net.room; };
 const unsub = net.onMessage(m => {
   if (m.type === 'error') errorMsg.value = m.message;
   if (m.type === 'room') {
+    sync();
     phase.value = m.room && m.room.code ? 'room' : 'lobby';
   }
   if (m.type === 'battle' || m.type === 'snapshot') {
@@ -21,13 +26,18 @@ const unsub = net.onMessage(m => {
     view.value = m.view;
   }
 });
-const roomInfo = computed(() => net.room);
+const roomInfo = computed(() => room.value);
 
 onMounted(async () => {
   await net.session();
-  net.connect();
+  sync();
+  await net.connect(); // open 后才允许派单（cookie 已就绪，避免首连 403 丢单）。
+  sync();
 });
 onUnmounted(() => { unsub(); net.close(); });
+
+// 暴露给子视图的响应式 user（Lobby 战绩/昵称显示）。
+provide('user', user);
 </script>
 
 <template>

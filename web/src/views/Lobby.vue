@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Lobby：昵称 + 建房/加入。
-import { ref } from 'vue';
+import { ref, inject, type Ref } from 'vue';
 import type { NetClient } from '../net/client';
 
 const props = defineProps<{ net: NetClient }>();
+const user = inject<Ref<any>>('user', ref(null));
 const name = ref('');
 const joinCode = ref('');
 const faction = ref('china');
@@ -17,6 +18,7 @@ const maps = [
 
 async function saveName() {
   if (name.value.trim()) await props.net.rename(name.value.trim());
+  user.value = props.net.user;
 }
 </script>
 
@@ -27,7 +29,7 @@ async function saveName() {
       <label>指挥官昵称</label>
       <div class="row">
         <input v-model="name" placeholder="输入昵称" maxlength="16" @change="saveName" />
-        <span class="whoami">{{ net.user?.name || '未命名' }}</span>
+        <span class="whoami">{{ user?.name || '未命名' }}</span>
       </div>
     </div>
     <div class="card">
@@ -52,15 +54,15 @@ async function saveName() {
         <button class="primary" @click="net.join(joinCode, faction)">加入</button>
       </div>
     </div>
-    <div class="record" v-if="net.user">
-      战绩 {{ net.user.wins }} 胜 / {{ net.user.losses }} 负 / {{ net.user.draws }} 平
+    <div class="record" v-if="user">
+      战绩 {{ user.wins }} 胜 / {{ user.losses }} 负 / {{ user.draws }} 平
     </div>
   </div>
 </template>
 
 <style scoped>
 .lobby { max-width: 560px; margin: 0 auto; padding: 48px 20px; display: flex; flex-direction: column; gap: 16px; }
-h1 { font-size: 28px; } .ver { font-size: 12px; color: #5f7a94; margin-left: 8px; }
+h1 { font-size: 28px; } .ver { font-size: 12px; color: #5f7a94; margin-left: 8px; font-family: ui-monospace, monospace; letter-spacing: .5px; }
 .card { background: #121a24; border: 1px solid #24344a; border-radius: 10px; padding: 16px; }
 label { display: block; font-size: 12px; color: #7f97ad; margin-bottom: 8px; }
 .row { display: flex; gap: 8px; align-items: center; }

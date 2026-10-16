@@ -49,19 +49,36 @@ export class NetClient {
     if (data.user) this.user = data.user;
   }
 
-  connect(url = `ws://${location.host}/battle-socket`) {
-    this.ws = new WebSocket(url);
-    this.ws.onmessage = ev => {
+  connect(url = `ws://${location.host}/battle-socket`): Promise<void> {
+    return new Promise<void>(resolve => {
+      const ws = new WebSocket(url);
+      this.ws = ws;
+      const done = () => resolve();
+      if (ws.readyState === WebSocket.OPEN) done();
+      else ws.addEventListener('open', done, { once: true });
+      // 首连失败（如 cookie 未就绪）时短退避重连，直至 open。
+      ws.addEventListener('close', () => {
+        if (this.ws !== ws) return;
+        this.retryTimer = window.setTimeout(() => this.connect(url).then(resolve), 300);
+      }, { once: true });
+    }).then(() => this.listen());
+  }
+
+  private listen() {
+    const ws = this.ws!;
+    ws.onmessage = ev => {
       const m = JSON.parse(ev.data) as ServerMsg;
       if (m.type === 'hello') { this.user = m.user; this.room = m.room; }
       if (m.type === 'room') this.room = m.room;
       if (m.type === 'battle' || m.type === 'snapshot') { this.view = m.view; this.seat = m.seat; }
       this.emit(m);
     };
-    this.ws.onclose = () => {
-      this.retryTimer = window.setTimeout(() => this.connect(url), 2000);
+    ws.onclose = () => {
+      this.retryTimer = window.setTimeout(() => { this.connect(); }, 2000);
     };
   }
+
+  get connected() { return this.ws?.readyState === WebSocket.OPEN; }
 
   send(msg: Record<string, unknown>) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
