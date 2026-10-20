@@ -98,6 +98,10 @@ export class NetClient {
   create(mapId: string, faction: string, victoryMode: string) {
     this.send({ type: 'create', mapId, faction, victoryMode });
   }
+  /** 单机：1 号席位自动由 AI 接管，服务端开局即 Multiplayer=false。 */
+  createSolo(mapId: string, faction: string, victoryMode: string) {
+    this.send({ type: 'create', mapId, faction, victoryMode, solo: true });
+  }
   join(code: string, faction: string) { this.send({ type: 'join', code, faction }); }
   ready(ready: boolean) { this.send({ type: 'ready', ready }); }
   faction(faction: string) { this.send({ type: 'faction', faction }); }

@@ -20,6 +20,13 @@ async function saveName() {
   if (name.value.trim()) await props.net.rename(name.value.trim());
   user.value = props.net.user;
 }
+
+/** 单机：AI 席位恒 ready 且在线，玩家 ready 后直接开战。 */
+function solo() {
+  props.net.createSolo('valley', faction.value, 'annihilation');
+  props.net.ready(true);
+  props.net.start();
+}
 </script>
 
 <template>
@@ -42,6 +49,7 @@ async function saveName() {
           <option>山谷对峙（默认）</option>
         </select>
         <button class="primary" @click="net.create('valley', faction, 'annihilation')">创建房间</button>
+        <button class="solo" @click="solo">单机对战 AI</button>
       </div>
     </div>
     <div class="card">

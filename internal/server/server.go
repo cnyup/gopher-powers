@@ -33,6 +33,19 @@ type member struct {
 	controlType string
 }
 
+// userID 席位用户 id；AI 席位无 user，返回空串（避免 nil 解引用）。
+func (m *member) userID() string {
+	if m == nil || m.user == nil {
+		return ""
+	}
+	return m.user.ID
+}
+
+// isAI 该席位是否由 AI 控制。
+func (m *member) isAI() bool {
+	return m != nil && m.controlType == "ai"
+}
+
 // room 对齐 index.mjs room 对象。
 type room struct {
 	code        string
@@ -184,7 +197,7 @@ func (s *Server) SessionPost(cookie, origin, ip string, body []byte) (map[string
 func (s *Server) userRoom(id string) *room {
 	for _, r := range s.rooms {
 		for _, m := range r.members {
-			if m != nil && m.user.ID == id && !m.left {
+			if m != nil && m.user != nil && m.user.ID == id && !m.left {
 				return r
 			}
 		}
@@ -209,13 +222,17 @@ func (s *Server) publicRoom(r *room) map[string]any {
 		if m == nil {
 			continue
 		}
-		connected := m.controlType == "ai" || s.peerOnline(m.user.ID)
+		connected := m.isAI() || s.peerOnline(m.userID())
 		var eliminated bool
 		if r.game != nil && i < len(r.game.Players) {
 			eliminated = r.game.Players[i].Eliminated
 		}
+		name := "AI"
+		if m.user != nil {
+			name = m.user.Name
+		}
 		members[i] = map[string]any{
-			"id": m.user.ID, "name": m.user.Name, "faction": m.faction,
+			"id": m.userID(), "name": name, "faction": m.faction,
 			"ready": m.ready, "connected": connected,
 			"controlType": orDefault(m.controlType, "human"), "eliminated": eliminated,
 		}
@@ -247,6 +264,16 @@ func orDefault(v, d string) string {
 	return v
 }
 
+// enemyFactionOf 单机模式下 AI 席位的阵营：确定性取一个与玩家不同的合法阵营。
+func enemyFactionOf(player string) string {
+	for _, f := range []string{"russia", "china", "usa", "europe"} {
+		if f != player && game.ValidFaction(f) {
+			return f
+		}
+	}
+	return "russia"
+}
+
 // Send 给指定用户发 JSON 消息。
 func (s *Server) Send(userID string, v any) {
 	p := s.peers[userID]
@@ -260,7 +287,9 @@ func (s *Server) Send(userID string, v any) {
 func (s *Server) roomNotice(r *room) {
 	for _, m := range r.members {
 		if m != nil {
-			s.Send(m.user.ID, map[string]any{"type": "room", "room": s.publicRoom(r)})
+			if id := m.userID(); id != "" {
+				s.Send(id, map[string]any{"type": "room", "room": s.publicRoom(r)})
+			}
 		}
 	}
 }
@@ -298,7 +327,9 @@ func (s *Server) end(r *room, winner any, reason string) {
 	_ = s.accounts.Settle(r.game.BattleID, [2]*store.User{r.members[0].user, r.members[1].user}, ws)
 	for side, m := range r.members {
 		if m != nil && !m.left && m.controlType != "ai" {
-			s.snapshot(r, m.user.ID, side, false)
+			if id := m.userID(); id != "" {
+				s.snapshot(r, id, side, false)
+			}
 		}
 	}
 	s.roomNotice(r)
@@ -311,7 +342,7 @@ func (s *Server) leave(userID string) {
 	}
 	side := -1
 	for i, m := range r.members {
-		if m != nil && m.user.ID == userID {
+		if m != nil && m.user != nil && m.user.ID == userID {
 			side = i
 			break
 		}
@@ -322,7 +353,9 @@ func (s *Server) leave(userID string) {
 	if r.game != nil {
 		for _, m := range r.members {
 			if m != nil {
-				s.Send(m.user.ID, map[string]any{"type": "room", "room": nil})
+				if id := m.userID(); id != "" {
+					s.Send(id, map[string]any{"type": "room", "room": nil})
+				}
 			}
 		}
 		delete(s.rooms, r.code)
@@ -388,7 +421,7 @@ func (s *Server) HandleMessage(userID string, raw []byte) error {
 	side := -1
 	if r != nil {
 		for i, m := range r.members {
-			if m != nil && m.user.ID == userID {
+			if m != nil && m.user != nil && m.user.ID == userID {
 				side = i
 			}
 		}
@@ -415,13 +448,18 @@ func (s *Server) HandleMessage(userID string, raw []byte) error {
 			return fmt.Errorf("作战配置无效")
 		}
 		code := s.newRoomCode()
+		solo, _ := msg["solo"].(bool)
 		nr := &room{
 			code: code, host: 0,
-			config: map[string]any{"mapId": mapID, "victoryMode": victoryMode, "battlefieldScale": 1.5},
+			config: map[string]any{"mapId": mapID, "victoryMode": victoryMode, "battlefieldScale": 1.5, "solo": solo},
 			memory: [2]viewMemory{{}, {}},
 			expires: time.Now().Add(10 * time.Minute),
 		}
 		nr.members[0] = &member{user: s.peersUser(userID), faction: faction, seat: 0, controlType: "human"}
+		if solo {
+			// 单机：1 号席位由 AI 接管，无 user、恒在线、开局即可开战。
+			nr.members[1] = &member{faction: enemyFactionOf(faction), seat: 1, ready: true, controlType: "ai"}
+		}
 		s.rooms[code] = nr
 		s.roomNotice(nr)
 		return nil
@@ -474,7 +512,7 @@ func (s *Server) HandleMessage(userID string, raw []byte) error {
 			return fmt.Errorf("双方准备完成后，由房主开战")
 		}
 		for _, m := range r.members {
-			if m == nil || !m.ready || !s.peerOnline(m.user.ID) {
+			if m == nil || !m.ready || (!m.isAI() && !s.peerOnline(m.userID())) {
 				return fmt.Errorf("双方准备完成后，由房主开战")
 			}
 		}
@@ -490,15 +528,18 @@ func (s *Server) HandleMessage(userID string, raw []byte) error {
 		mapID, _ := r.config["mapId"].(string)
 		victoryMode, _ := r.config["victoryMode"].(string)
 		scale, _ := r.config["battlefieldScale"].(float64)
+		solo, _ := r.config["solo"].(bool)
 		g, err := game.New(r.members[0].faction, r.members[1].faction, &game.Events{}, game.Options{
-			Multiplayer: true, VictoryMode: victoryMode, MapID: mapID, BattlefieldScale: scale,
+			Multiplayer: !solo, VictoryMode: victoryMode, MapID: mapID, BattlefieldScale: scale,
 		})
 		if err != nil {
 			return err
 		}
 		r.game = g
 		for seat, m := range r.members {
-			s.snapshot(r, m.user.ID, seat, true)
+			if id := m.userID(); id != "" {
+				s.snapshot(r, id, seat, true)
+			}
 		}
 		s.roomNotice(r)
 		return nil
@@ -552,7 +593,7 @@ func (s *Server) OnConnect(userID string, user *store.User, conn peerConn) {
 		if r.game != nil {
 			side := -1
 			for i, m := range r.members {
-				if m != nil && m.user.ID == userID {
+				if m != nil && m.user != nil && m.user.ID == userID {
 					side = i
 				}
 			}
@@ -583,15 +624,17 @@ func (s *Server) Tick() {
 			if now.After(r.expires) {
 				for _, m := range r.members {
 					if m != nil {
-						s.Send(m.user.ID, map[string]any{"type": "room", "room": nil})
+						if id := m.userID(); id != "" {
+					s.Send(id, map[string]any{"type": "room", "room": nil})
+				}
 					}
 				}
 				delete(s.rooms, code)
 			}
 			continue
 		}
-		d0 := r.members[0] == nil || !s.peerOnline(r.members[0].user.ID)
-		d1 := r.members[1] == nil || !s.peerOnline(r.members[1].user.ID)
+		d0 := r.members[0] == nil || (!r.members[0].isAI() && !s.peerOnline(r.members[0].userID()))
+		d1 := r.members[1] == nil || (!r.members[1].isAI() && !s.peerOnline(r.members[1].userID()))
 		if d0 || d1 {
 			r.game.Paused = true
 			if r.deadline.IsZero() {
@@ -632,7 +675,9 @@ func (s *Server) Tick() {
 		if s.tick%2 == 0 {
 			for side, m := range r.members {
 				if m != nil {
-					s.snapshot(r, m.user.ID, side, false)
+					if id := m.userID(); id != "" {
+				s.snapshot(r, id, side, false)
+			}
 				}
 			}
 		}
