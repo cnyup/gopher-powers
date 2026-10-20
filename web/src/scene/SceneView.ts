@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { prepareVisualAssets, createModel } from './models/visual-assets.js';
 import { equipmentModel, teamColor } from './equipmentModel';
+import { FxLayer } from './FxLayer';
 
 export interface EntityLike {
   id: number; type: string; owner: number;
@@ -19,6 +20,7 @@ export class SceneView {
   private buildingMeshes = new Map<number, THREE.Mesh>();
   private ground!: THREE.Mesh;
   private marker!: THREE.Mesh;
+  private fx = new FxLayer(this.scene); // 投射物/特效层（快照驱动 + 帧插值）
   selected = new Set<number>();
   onSelectChange: ((ids: number[]) => void) | null = null;
   onGroundClick: ((x: number, y: number) => void) | null = null;
@@ -235,6 +237,8 @@ export class SceneView {
       }
       this.paintFog({ cols, rows, visible, explored });
     }
+    // 投射物/特效（迷雾裁剪已在服务端完成，此处只管渲染）。
+    this.fx.sync(view?.projectiles ?? [], view?.effects ?? []);
   }
 
   private groundPoint(ev: PointerEvent): THREE.Vector3 | null {
@@ -325,6 +329,7 @@ export class SceneView {
   }
 
   render() {
+    this.fx.tick();
     this.renderer.render(this.scene, this.camera);
   }
 }
