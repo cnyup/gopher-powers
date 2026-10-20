@@ -9,6 +9,46 @@ const canvas = ref<HTMLCanvasElement | null>(null);
 const selection = ref<number[]>([]);
 let scene: SceneView | null = null;
 let raf = 0;
+const minimapCanvas = ref<HTMLCanvasElement | null>(null);
+const MINI = { width: 180, height: 116 };
+
+/** 画小地图：迷雾底 + 资源点 + 单位点（每帧随渲染循环重绘）。 */
+function drawMinimap() {
+  const cv = minimapCanvas.value;
+  if (!cv || !scene) return;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return;
+  const data = scene.minimapData(MINI);
+  ctx.clearRect(0, 0, MINI.width, MINI.height);
+  const colors: Record<string, string> = { visible: '#1b2836', explored: '#101820', dark: '#05080c' };
+  for (let y = 0; y < MINI.height; y++) {
+    for (let x = 0; x < MINI.width; x++) {
+      ctx.fillStyle = colors[data.fog[y * MINI.width + x]] ?? '#05080c';
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  for (const s of data.sites) {
+    ctx.fillStyle = typeof s.owner === 'number' ? (s.owner === 0 ? '#6ad48f' : '#e06a5a') : '#c9a227';
+    ctx.fillRect(s.x - 1, s.y - 1, 2.5, 2.5);
+  }
+  for (const u of data.units) {
+    ctx.fillStyle = u.owner === 0 ? '#8fe8b0' : u.owner === 1 ? '#ff8f7f' : '#9db4c8';
+    ctx.fillRect(u.x - 1, u.y - 1, 2, 2);
+  }
+}
+
+/** 点小地图：把视角中心移到对应世界坐标（右键移动指令的目标点预览）。 */
+function onMinimapClick(ev: MouseEvent) {
+  const cv = minimapCanvas.value;
+  if (!cv || !scene) return;
+  const rect = cv.getBoundingClientRect();
+  const mx = ((ev.clientX - rect.left) / rect.width) * MINI.width;
+  const my = ((ev.clientY - rect.top) / rect.height) * MINI.height;
+  const p = scene.minimapToWorldPoint(mx, my, MINI);
+  const ids = selection.value;
+  if (ids.length) props.net.command('move', { x: p.x, y: p.y, selected: ids });
+  scene.focusOn(p.x, p.y);
+}
 
 const v = computed(() => props.view);
 const me = computed(() => v.value?.players?.[0] ?? null);
@@ -30,6 +70,7 @@ onMounted(() => {
   };
   const loop = () => {
     scene?.render();
+    drawMinimap();
     raf = requestAnimationFrame(loop);
   };
   raf = requestAnimationFrame(loop);
@@ -75,6 +116,7 @@ onUnmounted(() => document.removeEventListener('keydown', esc));
     <main>
       <section class="field">
         <canvas ref="canvas"></canvas>
+        <canvas ref="minimap" class="minimap" @click="onMinimapClick"></canvas>
       </section>
       <aside>
         <div class="panel">
@@ -117,6 +159,8 @@ button.ghost { background: transparent; border: 1px solid #2a3b52; margin-left: 
 main { flex: 1; display: flex; min-height: 0; }
 .field { flex: 1; position: relative; min-width: 0; }
 .field canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.field canvas.minimap { position: absolute; right: 12px; bottom: 12px; inset: auto; width: 180px; height: 116px;
+  border: 1px solid #2a3b52; border-radius: 4px; background: #05080c; cursor: pointer; opacity: .92; }
 aside { width: 210px; padding: 12px; border-left: 1px solid #1d2c40; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .panel { background: #121a24; border: 1px solid #24344a; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .panel h3 { font-size: 12px; color: #7f97ad; margin-bottom: 4px; font-weight: 600; }

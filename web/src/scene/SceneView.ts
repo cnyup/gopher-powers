@@ -5,6 +5,7 @@ import { prepareVisualAssets, createModel } from './models/visual-assets.js';
 import { equipmentModel, teamColor } from './equipmentModel';
 import { FxLayer } from './FxLayer';
 import { createSiteMesh, applyOwnerTint, siteLift, type SiteKind } from './siteVisuals';
+import { normalizeRect, selectInRect, worldToMinimap, minimapToWorld, downsampleFog, type FogCell } from './selection';
 
 export interface EntityLike {
   id: number; type: string; owner: number;
@@ -49,7 +50,8 @@ export class SceneView {
     this.createFogLayer(this.world.width, this.world.height);
     this.createMarker();
     canvas.addEventListener('pointerdown', this.onPointerDown);
-    canvas.addEventListener('pointermove', ev => this.updateGhost(ev));
+    canvas.addEventListener('pointermove', ev => { this.updateGhost(ev); this.updateDrag(ev); });
+    canvas.addEventListener('pointerup', () => this.endDrag());
     canvas.addEventListener('keydown', () => {});
     canvas.tabIndex = 0;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -156,6 +158,10 @@ export class SceneView {
   syncView(view: any) {
     if (view?.running !== undefined && view.units && view.buildings) {
       const seenU = new Set<number>();
+      // 框选数据源：快照里的单位（owner 已按席位重排，0=己方）。
+      this.lastUnits = (view.units as EntityLike[]).map(u => ({
+        id: u.id, owner: u.owner, x: u.x, y: u.y,
+      }));
       for (const u of view.units as EntityLike[]) {
         seenU.add(u.id);
         let m = this.unitMeshes.get(u.id);
@@ -238,6 +244,7 @@ export class SceneView {
         visible[i] = b & (2 << ((i % 4) * 2)) ? 1 : 0;
         explored[i] = b & (1 << ((i % 4) * 2)) ? 1 : 0;
       }
+      this.lastFog = { cols, rows, visible, explored };
       this.paintFog({ cols, rows, visible, explored });
     }
     // 投射物/特效（迷雾裁剪已在服务端完成，此处只管渲染）。
@@ -269,6 +276,7 @@ export class SceneView {
       }
       mesh.position.set(x, siteLift(kind as SiteKind), z);
       applyOwnerTint(mesh, site.owner);
+      mesh.userData.owner = site.owner;
     }
     for (const [key, mesh] of this.siteMeshes) {
       if (!seen.has(key)) {
@@ -316,13 +324,76 @@ export class SceneView {
       );
       this.raycaster.setFromCamera(ndc, this.camera);
       const hits = this.raycaster.intersectObjects(this.pickables);
-      this.selected.clear();
       if (hits.length) {
+        // 点到实体：立即单选，不进入框选。
+        this.selected.clear();
         this.selected.add(hits[0].object.userData.id as number);
+        this.onSelectChange?.([...this.selected]);
+        return;
       }
-      this.onSelectChange?.([...this.selected]);
+      // 点空地：开始拉框（松手时按矩形选中己方单位）。
+      const gp = this.groundPoint(ev);
+      if (!gp) return;
+      this.dragStart = { x: gp.x, y: gp.z };
+      this.dragEnd = { x: gp.x, y: gp.z };
+      this.dragActive = true;
     }
   };
+
+  private dragStart: { x: number; y: number } | null = null;
+  private dragEnd: { x: number; y: number } | null = null;
+  private dragActive = false;
+  private dragBox!: THREE.Mesh;
+
+  /** 框选拖拽中：更新矩形并画半透明预览（world y → three z）。 */
+  private updateDrag(ev: PointerEvent) {
+    if (!this.dragActive || !this.dragStart) return;
+    const p = this.groundPoint(ev);
+    if (!p) return;
+    this.dragEnd = { x: p.x, y: p.z };
+    const r = normalizeRect({
+      x1: this.dragStart.x, y1: this.dragStart.y,
+      x2: this.dragEnd.x, y2: this.dragEnd.y,
+    });
+    if (!this.dragBox) {
+      this.dragBox = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ color: 0x6ad48f, transparent: true, opacity: .18, depthWrite: false }),
+      );
+      this.dragBox.rotation.x = -Math.PI / 2;
+      this.dragBox.visible = false;
+      this.scene.add(this.dragBox);
+    }
+    this.dragBox.visible = true;
+    this.dragBox.position.set(r.x + r.w / 2, 2, r.y + r.h / 2);
+    this.dragBox.scale.set(Math.max(r.w, 1), Math.max(r.h, 1), 1);
+  }
+
+  /** 松手：结算框选（面积过小视为点击空地 → 清空选择）。 */
+  private endDrag() {
+    if (!this.dragActive || !this.dragStart || !this.dragEnd) {
+      this.dragActive = false;
+      if (this.dragBox) this.dragBox.visible = false;
+      return;
+    }
+    const r = normalizeRect({
+      x1: this.dragStart.x, y1: this.dragStart.y,
+      x2: this.dragEnd.x, y2: this.dragEnd.y,
+    });
+    this.dragActive = false;
+    this.dragStart = null;
+    this.dragEnd = null;
+    if (this.dragBox) this.dragBox.visible = false;
+
+    this.selected.clear();
+    if (r.w > 6 || r.h > 6) {
+      for (const id of selectInRect(this.lastUnits, r)) this.selected.add(id);
+    }
+    this.onSelectChange?.([...this.selected]);
+  }
+
+  /** 最近一次快照的己方单位（框选数据源，避免每帧反查场景图）。 */
+  private lastUnits: { id: number; owner?: number; x: number; y: number; kind?: string }[] = [];
 
   private ghost: THREE.Mesh | null = null;
   placingType: string | null = null;
@@ -364,6 +435,42 @@ export class SceneView {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
+
+  /** 小地图数据：迷雾降采样 + 单位/站点投影（供 HUD 画 canvas）。 */
+  minimapData(mini: { width: number; height: number }): {
+    fog: FogCell[];
+    units: { x: number; y: number; owner: number }[];
+    sites: { x: number; y: number; kind: string; owner: unknown }[];
+    world: { width: number; height: number };
+  } {
+    const fog = this.lastFog
+      ? downsampleFog(this.lastFog, mini)
+      : new Array<FogCell>(mini.width * mini.height).fill('dark');
+    const units = this.lastUnits.map(u => {
+      const p = worldToMinimap(u.x, u.y, this.world, mini);
+      return { x: p.x, y: p.y, owner: u.owner ?? -1 };
+    });
+    const sites = [...this.siteMeshes.values()].map(m => {
+      const p = worldToMinimap(m.position.x, m.position.z, this.world, mini);
+      return { x: p.x, y: p.y, kind: String(m.userData.siteKind ?? ''), owner: m.userData.owner };
+    });
+    return { fog, units, sites, world: { ...this.world } };
+  }
+
+  /** 把相机中心移到世界坐标 (x,y)（小地图跳转用；保持俯视角与距离）。 */
+  focusOn(x: number, y: number) {
+    const dx = this.camera.position.x - this.world.width / 2;
+    const dz = this.camera.position.z - this.world.height / 2;
+    this.camera.position.set(x + dx, this.camera.position.y, y + dz);
+    this.camera.lookAt(x, 0, y);
+  }
+
+  /** 小地图点击 → 世界坐标（HUD 用来跳视角/发指令）。 */
+  minimapToWorldPoint(mx: number, my: number, mini: { width: number; height: number }) {
+    return minimapToWorld(mx, my, this.world, mini);
+  }
+
+  private lastFog: { cols: number; rows: number; visible: Uint8Array; explored: Uint8Array } | null = null;
 
   render() {
     this.fx.tick();
