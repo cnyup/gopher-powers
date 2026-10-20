@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { prepareVisualAssets, createModel } from './models/visual-assets.js';
 import { equipmentModel, teamColor } from './equipmentModel';
 import { FxLayer } from './FxLayer';
+import { createSiteMesh, applyOwnerTint, siteLift, type SiteKind } from './siteVisuals';
 
 export interface EntityLike {
   id: number; type: string; owner: number;
@@ -18,6 +19,8 @@ export class SceneView {
   private pickables: THREE.Mesh[] = [];
   private unitMeshes = new Map<number, THREE.Mesh>();
   private buildingMeshes = new Map<number, THREE.Mesh>();
+  /** 资源点（矿/油/信标/资源站）：key = 站点 id（string，跨四类全局唯一）。 */
+  private siteMeshes = new Map<string, THREE.Mesh>();
   private ground!: THREE.Mesh;
   private marker!: THREE.Mesh;
   private fx = new FxLayer(this.scene); // 投射物/特效层（快照驱动 + 帧插值）
@@ -239,6 +242,40 @@ export class SceneView {
     }
     // 投射物/特效（迷雾裁剪已在服务端完成，此处只管渲染）。
     this.fx.sync(view?.projectiles ?? [], view?.effects ?? []);
+    // 资源点四类同构渲染（服务端已按迷雾裁剪/记忆补全，null 元素跳过）。
+    this.syncSites(view);
+  }
+
+  /** 资源点：矿(ore,含 amount)/油(oil)/信标(beacons)/资源站(resourceSites)。
+   *  四类共用一张网格池，key 用站点 id；owner<0 或 null 视为中立。 */
+  private syncSites(view: any) {
+    const entries: { site: any; kind: string }[] = [];
+    for (const s of view?.ore ?? []) if (s) entries.push({ site: s, kind: 'ore' });
+    for (const s of view?.oil ?? []) if (s) entries.push({ site: s, kind: 'oil' });
+    for (const s of view?.beacons ?? []) if (s) entries.push({ site: s, kind: 'beacon' });
+    for (const s of view?.resourceSites ?? []) if (s) entries.push({ site: s, kind: 'resource' });
+
+    const seen = new Set<string>();
+    for (const { site, kind } of entries) {
+      const key = String(site.id ?? `${kind}-${site.x}-${site.y}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let mesh = this.siteMeshes.get(key);
+      const [x, z] = this.toScene(site.x, site.y);
+      if (!mesh) {
+        mesh = createSiteMesh(kind as SiteKind, site);
+        this.siteMeshes.set(key, mesh);
+        this.scene.add(mesh);
+      }
+      mesh.position.set(x, siteLift(kind as SiteKind), z);
+      applyOwnerTint(mesh, site.owner);
+    }
+    for (const [key, mesh] of this.siteMeshes) {
+      if (!seen.has(key)) {
+        this.scene.remove(mesh);
+        this.siteMeshes.delete(key);
+      }
+    }
   }
 
   private groundPoint(ev: PointerEvent): THREE.Vector3 | null {

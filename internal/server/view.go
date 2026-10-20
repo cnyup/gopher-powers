@@ -102,6 +102,9 @@ func battleView(g *game.Game, side int, memory viewMemory, spectator bool) map[s
 	}
 	// 记忆中已不可见且原地无建筑的条目删除（原位置可见时才删——消失确认）。
 	for id := range memory {
+		if id < 0 {
+			continue // site 记忆（负数键）不参与建筑的消失确认。
+		}
 		b := g.GetBuilding(id)
 		pos := buildingPosOf(memory[id])
 		if b == nil && pos != nil && g.IsVisibleFor(side, pos.x, pos.y) {
@@ -120,9 +123,13 @@ func battleView(g *game.Game, side int, memory viewMemory, spectator bool) map[s
 			x, _ := s["x"].(float64)
 			y, _ := s["y"].(float64)
 			ownerV, hasOwner := s["owner"]
-			if g.IsVisibleFor(side, x, y) || (hasOwner && int(ownerV.(float64)) == side) || memorySite(memory, id) == nil {
+			ownerNum, hasOwnerNum := ownerV.(float64)
+			here := g.IsVisibleFor(side, x, y)
+			mine := hasOwnerNum && int(ownerNum) == side
+			if here || mine || memorySite(memory, id) == nil {
 				v := s
-				if !g.IsVisibleFor(side, x, y) && hasOwner && int(ownerV.(float64)) != side {
+				// 迷雾遮蔽且非己方：隐藏真实归属与剩余量（对齐 battle-view.mjs:38）。
+				if !here && hasOwnerNum && int(ownerNum) != side {
 					if hasOwner {
 						v["owner"] = nil
 					}
@@ -130,8 +137,13 @@ func battleView(g *game.Game, side int, memory viewMemory, spectator bool) map[s
 						v["amount"] = s["max"]
 					}
 				}
+				// 归属重排：读 v 当前值而非原始 ownerV——否则上一段的剥离会被覆盖回真实归属。
 				if hasOwner {
-					v["owner"] = owner(int(ownerV.(float64)))
+					if cur, ok := v["owner"]; ok && cur != nil {
+						if f, ok2 := cur.(float64); ok2 {
+							v["owner"] = owner(int(f))
+						}
+					}
 				}
 				setSiteMemory(memory, id, v)
 			}
@@ -172,6 +184,9 @@ func battleView(g *game.Game, side int, memory viewMemory, spectator bool) map[s
 		buildingsOut = append(buildingsOut, entityView(b))
 	}
 	for id, raw := range memory {
+		if id < 0 {
+			continue // site 记忆用负数键，不属于建筑输出（对齐源 typeof id === 'number'）。
+		}
 		var m map[string]any
 		if json.Unmarshal(raw, &m) == nil {
 			_ = id
@@ -270,12 +285,25 @@ func siteKey(id string) int {
 	return -h - 1
 }
 
-func memorySite(memory viewMemory, siteID string) json.RawMessage { return nil }
+func memorySite(memory viewMemory, siteID string) json.RawMessage {
+	return memory[siteKey(siteID)]
+}
 
-func setSiteMemory(memory viewMemory, siteID string, v map[string]any) {}
+func setSiteMemory(memory viewMemory, siteID string, v map[string]any) {
+	memory[siteKey(siteID)] = copyJSON(v)
+}
 
-func siteMemory(memory viewMemory, siteID string) map[string]any { return nil }
-
+func siteMemory(memory viewMemory, siteID string) map[string]any {
+	raw := memory[siteKey(siteID)]
+	if raw == nil {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return nil
+	}
+	return m
+}
 type xy struct{ x, y float64 }
 
 func buildingPosOf(raw json.RawMessage) *xy {
