@@ -1,15 +1,17 @@
 # Handoff — GopherPowers（great-powers-rts → Go 重写）
 
-> 交接时间：2026-10-20（第三次交接）· 当前 HEAD：`d6142fe`（工作区干净）
+> 交接时间：2026-10-21（第四次交接）· 当前 HEAD：`4d687c2`（工作区干净）
 > 项目：把 JS/Three.js 的 RTS「大国崛起」重写为 Go 后端 + Vue3 前端
-> 上一版交接：`dd8c24d` 时的 HANDOFF；本版复验全部数字，M3 推进到约 90%（见 §2/§3），§9 记录本轮修掉的三个真 bug
+> 上一版交接：`d6142fe` 时的 HANDOFF；本轮**做首次浏览器实拍验收**并据此修掉四个真 bug，
+> M3 功能面收尾（见 §2/§3 与新增的 §11）
 
 ---
 
 ## 1. 一句话现状
 
-**M1（模拟核心）✅**、**M2（服务端）✅**、**M3（前端）约 90%**、**M4/M5 未开始**。
-本次交接实测：`go test ./internal/...` 9 包全 pass、`npm run build` exit 0（详见 §2 验证列）。
+**M1（模拟核心）✅**、**M2（服务端）✅**、**M3（前端）功能面完成**、**M4/M5 未开始**。
+本次交接实测：`go test ./internal/...` 11 包全 pass、`npm test` 36/36、`npm run build` exit 0
+（详见 §2 验证列）。M3 剩余的不是功能，而是**与旧版 JS 前端的视觉像素对照**。
 
 ---
 
@@ -27,9 +29,9 @@
 
 | 命令 | 结果 |
 | --- | --- |
-| `go test ./internal/... -count=1` | exit 0；9 个包全 pass（game/data/equip/pathfind/rules/spacing/protocol/server/store），lunar、report 无测试文件 |
-| `npm --prefix web run build` | exit 0；47 modules，`dist/assets/index-*.js` 781.35 kB（gzip 214.96 kB），451ms |
-| `npm --prefix web test` | 12/12 pass（`node --test src/scene/*.test.mjs`） |
+| `go test ./internal/... -count=1` | exit 0；11 个包全 ok（含 lunar、report 显示 `[no test files]`） |
+| `npm --prefix web run build` | exit 0；49 modules，`dist/assets/index-*.js` 787.34 kB（gzip 216.87 kB），310ms |
+| `npm --prefix web test` | 36/36 pass（FxLayer 6 + siteVisuals 7 + selection 7 + placement 16） |
 
 ### M3 细分
 
@@ -42,8 +44,13 @@
 | 投射物/特效渲染 | ✅ | `5c60b32`，`FxLayer.ts` 消费 `projectiles/effects`；node --test 6/6（池化/外推/封顶/光束几何/脉冲半径） |
 | 资源点渲染（矿/油/信标/资源站） | ✅ | `d21c675`，`siteVisuals.ts` + SceneView `siteMeshes` 差量池；服务端 site 记忆同步补实现（见 §9.1） |
 | 单机模式（本地打 AI） | ✅ | `d6142fe`，`create{solo:true}` 自动填 AI 席位；solo_test.go 3/3（AI 席位构造/开局 IsAI/联机房不变） |
-| 小地图 / 框选 / 建筑落位吸附 | ⬜ | `SceneView.ts` 仍无小地图、无矩形框选、无吸附 |
-| 视觉对照验收（与旧版截图比对） | ⬜ | 需要人工/视觉模型；本轮所有渲染改动**均未做浏览器实拍验证** |
+| 小地图 / 框选 | ✅ | `7d9de93`，`selection.ts` 纯函数 + `SceneView` 拖拽/小地图 canvas |
+| 建筑落位红绿着色 | ✅ | `4d687c2`，`placement.ts` 复刻 canPlace（16/16）+ 服务端下发 `placeRules` |
+| 视觉对照验收（与旧版截图比对） | ⬜ | **渲染已实拍验证过存在性/着色**（§11），但未与旧版像素级对照，需人工或视觉模型 |
+
+> 注：上一版把「建筑落位吸附」列为待办——**实测源项目根本没有吸附**
+> （`render.js:1183` 直接把指针世界坐标传给 `canPlace`/`placeBuilding`）。
+> 源项目有而我们缺的是**合法性红绿着色**与**失败反馈**，本轮补的是这个，不是吸附。
 
 ---
 
@@ -109,9 +116,9 @@ cd ~/github/GopherPowers && go run ./cmd/parity-replay parity/scripts/economy.js
 
 ### 测试
 ```bash
-go test ./internal/... -count=1       # 9 包全绿
+go test ./internal/... -count=1       # 11 包全绿
 npm --prefix web run build            # vue-tsc + vite（含类型检查）
-npm --prefix web test                 # node --test src/scene/*.test.mjs（12 例）
+npm --prefix web test                 # node --test src/scene/*.test.mjs（36 例）
 ```
 
 ---
@@ -260,3 +267,61 @@ AI 席位没有 `user`，`m.user.ID` 直接解引用会 panic——`TestSoloStar
   `web/package.json` 加 `test` 脚本才可能被识别。绕过方式经用户确认后使用裸
   `git commit`（`d21c675`、`d6142fe` 两次）。
 
+
+---
+
+## 11. 第四次交接（2026-10-21）：首次浏览器实拍 + 四个真 bug
+
+### 11.1 实拍验收怎么跑（下个会话可直接复用）
+
+Playwright 在 `/tmp/pw-probe`（本机已装，chromium 复用 `~/Library/Caches/ms-playwright`）。
+关键技巧两条，都是踩出来的：
+
+1. **拿战场内部状态**：Vue 的 `setupState` 看不到 `Battle.vue` 里的 `let scene`
+   （非响应式，且 `__vueParentComponent` 在自定义元素上取不到链）。
+   可靠办法是 **CDP 拦 WS 帧**：
+   `ctx.newCDPSession(page)` → `Network.enable` → 监听
+   `Network.webSocketFrameReceived`，从 `battle`/`snapshot` 帧直接读 `view`。
+2. **判 ghost 颜色别用 WebGL `readPixels`**：`preserveDrawingBuffer=false` 时
+   帧外读回全 0。改用 `page.screenshot({clip})` + PNG 解码统计像素。
+
+真实对局跑一遍的耗时基线：开局 6s、发电站建造 17s（含 14s 建造 + 缓冲）。
+
+### 11.2 本轮修掉的四个真 bug（全是照抄源项目时漏的分支）
+
+| # | Bug | 表现 | 根因 | 回归测试 |
+| --- | --- | --- | --- | --- |
+| 1 | 单机局结算 SIGSEGV | **整个服务进程崩溃**，打完一局就没了 | `end()` 把 AI 席位的 `nil user` 传进 `Settle` 解引用 | `TestSoloEndWithoutAIUser` / `TestSoloEndRecordsNothing` / `TestMultiplayerEndStillSettles` |
+| 2 | `resourceSites` 泄漏 Go 字段名 | 前端读 `site.id` 得 `undefined`，所有资源站共用同一退化 key | `gpdata.ResourceSite` 缺 json tag | `TestBattleViewResourceSitesLowercaseKeys` |
+| 3 | 单机模式进不了放置态 | 建造完成后没有任何反应，建筑永远放不下 | 源项目读同进程 `game.pendingBuilding`，拆进程后未下发 | 浏览器实拍（`HINT="放置中：power"`） |
+| 4 | ghost 恒为绿色 | 非法落点也显示绿色，放置失败无提示 | 源 `render.js:1177` 按 `canPlace` 染红绿，Go 版没做 | `placement.test.mjs` 16/16 + 实拍绿/红色块 |
+
+bug 1 与 §9.4 同族——上次补 `userID()`/`isAI()` 时有**一处漏网**（`end()` 的 Settle 调用）。
+教训：**单机 solo 是本项目新增能力，源项目没有**。任何把 `members[i].user` 解引用
+传进结算/广播的代码路径都要先判 nil，不能照抄源项目的"成员必有 user"假设。
+
+### 11.3 关于「建筑落位吸附」（上一版遗留判断有误）
+
+实测源项目**没有吸附**：`render.js:1183` 直接把 `this.pointer`（射线与地面交点的
+浮点世界坐标）传给 `canPlace`/`placeBuilding`，全仓 grep 无任何放置吸附逻辑。
+本轮补的是源项目**有而 Go 版缺**的合法性着色与失败反馈。
+
+### 11.4 新增的协议字段（前端依赖，改 battleView 时别删）
+
+- `view.placeRules`：`{worldWidth, worldHeight, noBuild[], dockZones[], sizes{}}`
+  ——源项目 canPlace 在客户端本地跑，拆进程后这些输入必须传输。
+- `view.pendingBuilding`：`string | null`，仅单机局非空
+  （联机局走 `players[0].readyBuilding`，源 `online-game.js:54`）。
+
+### 11.5 M3 剩余
+
+只剩**与旧版 JS 前端的视觉像素对照**——需要把源项目也跑起来同图同机位截图比对，
+或由人/视觉模型目视。功能面（含小地图、框选、资源点、投射物特效、落位着色）已闭合。
+
+### 11.6 交付工具限制（第三次踩到，勿再试）
+
+`deliver_task` 对 Go `_test.go` 的**逐文件归因始终 unsupported**（本轮 4 个 `_test.go`
+全部报"目标必须是当前仓库内存在的测试文件"，尽管文件确实存在）。
+`run_tests()` 全量跑能拿到可采证记录，但它把 `filter="solo"` 当包名解析 → "setup failed"，
+反而污染门禁判成 RED。**结论：Go 侧一律 `go test ./internal/...` + 裸 `git commit`**
+（本轮 `4d687c2` 已再次经用户流程确认）。
