@@ -41,6 +41,55 @@ func TestBattleViewSitesBasic(t *testing.T) {
 	}
 }
 
+// 四类 site 都必须用协议小写字段名——ResourceSite 曾缺 json tag，
+// 序列化成 ID/X/Y/Owner（Go 字段名），前端读 site.id 得到 undefined，
+// 导致所有资源站共用同一个退化 key。
+func TestBattleViewResourceSitesLowercaseKeys(t *testing.T) {
+	g := makeTestGame(t)
+	if len(g.ResourceSites) == 0 {
+		t.Fatal("测试地图应有资源站")
+	}
+	view := battleView(g, 0, viewMemory{}, false)
+	sites, ok := view["resourceSites"].([]any)
+	if !ok || len(sites) == 0 {
+		t.Fatalf("resourceSites 为空或类型异常：%T", view["resourceSites"])
+	}
+	seen := map[string]bool{}
+	for i, e := range sites {
+		m, ok := e.(map[string]any)
+		if !ok {
+			t.Fatalf("resourceSites[%d] 非 map：%T", i, e)
+		}
+		for _, k := range []string{"id", "x", "y", "owner", "amount", "type"} {
+			if _, has := m[k]; !has {
+				t.Fatalf("resourceSites[%d] 缺协议字段 %q，实际键：%v", i, k, keysOf(m))
+			}
+		}
+		// Go 字段名泄漏说明 json tag 缺失。
+		for _, bad := range []string{"ID", "X", "Y", "Owner", "Amount", "Type"} {
+			if _, has := m[bad]; has {
+				t.Fatalf("resourceSites[%d] 泄漏 Go 字段名 %q（缺 json tag）", i, bad)
+			}
+		}
+		id, _ := m["id"].(string)
+		if id == "" {
+			t.Fatalf("resourceSites[%d] id 为空", i)
+		}
+		if seen[id] {
+			t.Fatalf("resourceSites id 重复：%q（前端按 id 做差量池 key，重复会互相覆盖）", id)
+		}
+		seen[id] = true
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestBattleViewSitesMemoryPersists(t *testing.T) {
 	// 已看过的 site 进入记忆；随后被迷雾遮蔽，快照仍返回记忆中的条目（而非 null）。
 	g := makeTestGame(t)

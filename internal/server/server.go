@@ -324,7 +324,22 @@ func (s *Server) end(r *room, winner any, reason string) {
 	if w, ok := winner.(int); ok {
 		ws = fmt.Sprint(w)
 	}
-	_ = s.accounts.Settle(r.game.BattleID, [2]*store.User{r.members[0].user, r.members[1].user}, ws)
+	// 战绩结算：两侧都必须有真实 user。单机局 AI 席位无 user，不落库
+	// （源项目单机存档在浏览器 localStorage，不写 matches——重写方案 §1.3）。
+	// 源 accounts.mjs 的 settle 直接解引用 users[i].id，因为源项目没有 solo 模式；
+	// 我们新增 solo 后此处必须显式守卫，否则 AI 席位会让整个服务进程 SIGSEGV。
+	var su [2]*store.User
+	canSettle := true
+	for i, m := range r.members {
+		if m == nil || m.user == nil {
+			canSettle = false
+			break
+		}
+		su[i] = m.user
+	}
+	if canSettle {
+		_ = s.accounts.Settle(r.game.BattleID, su, ws)
+	}
 	for side, m := range r.members {
 		if m != nil && !m.left && m.controlType != "ai" {
 			if id := m.userID(); id != "" {

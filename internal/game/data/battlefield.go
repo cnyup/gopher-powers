@@ -81,15 +81,18 @@ var RESOURCE_TYPES = map[string]ResourceType{
 }
 
 // ResourceSite 对齐 sixResources/resourceLayout 产出条目。
+// json tag 必须显式声明：这些字段经 battleView 直接 JSON 序列化给前端，
+// 缺 tag 会输出 Go 字段名（ID/X/Owner…），前端读 site.id 得到 undefined。
 type ResourceSite struct {
-	ID       string
-	Kind     string // 恒为 "resource"
-	Type     string
-	X, Y     float64
-	Owner    int // -1 = null
-	Amount   float64
-	Max      float64
-	Progress float64
+	ID       string  `json:"id"`
+	Kind     string  `json:"kind"` // 恒为 "resource"
+	Type     string  `json:"type"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Owner    int     `json:"owner"` // -1 = null
+	Amount   float64 `json:"amount"`
+	Max      float64 `json:"max"`
+	Progress float64 `json:"progress"`
 }
 
 // sixResources 对齐 six-player-map.js:13。

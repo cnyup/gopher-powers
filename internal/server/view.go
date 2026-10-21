@@ -249,7 +249,26 @@ func battleView(g *game.Game, side int, memory viewMemory, spectator bool) map[s
 		"fog":         protocol.PackFog(fog.Cols, fog.Rows, fog.Visible, fog.Explored),
 		"projectiles": projs,
 		"effects":     effects,
+		// 放置预检规则：源项目 canPlace 在客户端本地跑（render.js:1177），
+		// 我们拆进程后把前端推不出的输入（世界尺寸/禁建区/船坞区/建筑尺寸）下发。
+		"placeRules": g.PlaceRulesFor(side),
+		// 单机局的待部署建筑：源项目靠同进程的 game.pendingBuilding 判断
+		// （main.js:408/411），拆成两进程后必须显式下发，否则前端永远进不了放置模式。
+		// 联机局走 players[0].readyBuilding，此字段恒为 null。
+		"pendingBuilding": pendingBuildingView(g, side),
 	}
+}
+
+// pendingBuildingView 单机局的待部署建筑（"" → nil）。
+// 联机局该字段不走这里——源项目联机用 players[i].readyBuilding（online-game.js:54）。
+func pendingBuildingView(g *game.Game, side int) any {
+	if side != 0 || g.Multiplayer {
+		return nil
+	}
+	if g.PendingBuilding == "" {
+		return nil
+	}
+	return g.PendingBuilding
 }
 
 func copyAny(m map[string]any) map[string]any {

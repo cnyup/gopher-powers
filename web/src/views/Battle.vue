@@ -52,7 +52,9 @@ function onMinimapClick(ev: MouseEvent) {
 
 const v = computed(() => props.view);
 const me = computed(() => v.value?.players?.[0] ?? null);
-const pending = computed<string | null>(() => me.value?.readyBuilding || null);
+// 待部署建筑：单机局由服务端下发 view.pendingBuilding（源项目靠同进程的
+// game.pendingBuilding，拆进程后必须传输）；联机局走 players[0].readyBuilding。
+const pending = computed<string | null>(() => me.value?.readyBuilding || v.value?.pendingBuilding || null);
 const placing = ref<string | null>(null);
 const units = computed(() => (v.value?.units ?? []) as any[]);
 

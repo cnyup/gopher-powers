@@ -6,6 +6,7 @@ import { equipmentModel, teamColor } from './equipmentModel';
 import { FxLayer } from './FxLayer';
 import { createSiteMesh, applyOwnerTint, siteLift, type SiteKind } from './siteVisuals';
 import { normalizeRect, selectInRect, worldToMinimap, minimapToWorld, downsampleFog, type FogCell } from './selection';
+import { canPlace, placeColor, type PlaceRules, type PlaceScene } from './placement';
 
 export interface EntityLike {
   id: number; type: string; owner: number;
@@ -251,6 +252,42 @@ export class SceneView {
     this.fx.sync(view?.projectiles ?? [], view?.effects ?? []);
     // 资源点四类同构渲染（服务端已按迷雾裁剪/记忆补全，null 元素跳过）。
     this.syncSites(view);
+    this.syncPlaceRules(view);
+  }
+
+  /** 放置预检输入：规则本体随快照下发，判据用的实体直接投影自快照。 */
+  private syncPlaceRules(view: any) {
+    if (view?.placeRules) {
+      this.placeRules = view.placeRules as PlaceRules;
+      // 世界尺寸以服务端为准（战场缩放后并非 2240×1440 基准值）。
+      const w = this.placeRules.worldWidth, h = this.placeRules.worldHeight;
+      if (w > 0 && h > 0 && (w !== this.world.width || h !== this.world.height)) {
+        this.world = { width: w, height: h };
+        this.resizeWorld(w, h);
+      }
+    }
+    const own = (list: any) => (Array.isArray(list) ? list.filter(Boolean) : []);
+    const ownBuildings = own(view?.buildings).filter((b: any) => b.owner === 0);
+    this.placeScene = {
+      ore: own(view?.ore),
+      oil: own(view?.oil),
+      beacons: own(view?.beacons),
+      resourceSites: own(view?.resourceSites),
+      buildings: own(view?.buildings),
+      ownBuildings,
+    };
+    this.hasFactory = ownBuildings.some((b: any) => b.type === 'factory');
+  }
+
+  /** 世界尺寸变化时重建地面/网格/迷雾层（缩放版战场与初始假设不同）。 */
+  private resizeWorld(w: number, h: number) {
+    this.scene.remove(this.ground, this.fogMesh);
+    for (const child of [...this.scene.children]) {
+      if ((child as any).isGridHelper) this.scene.remove(child);
+    }
+    this.createGround();
+    this.createFogLayer(w, h);
+    this.paintFog(this.lastFog);
   }
 
   /** 资源点：矿(ore,含 amount)/油(oil)/信标(beacons)/资源站(resourceSites)。
@@ -395,6 +432,11 @@ export class SceneView {
   /** 最近一次快照的己方单位（框选数据源，避免每帧反查场景图）。 */
   private lastUnits: { id: number; owner?: number; x: number; y: number; kind?: string }[] = [];
 
+  /** 放置预检规则（服务端下发）+ 快照投影的判据输入。 */
+  private placeRules: PlaceRules | null = null;
+  private placeScene: PlaceScene = {};
+  private hasFactory = false;
+
   private ghost: THREE.Mesh | null = null;
   placingType: string | null = null;
   onPlace: ((type: string, x: number, y: number) => void) | null = null;
@@ -404,7 +446,7 @@ export class SceneView {
     const p = this.groundPoint(ev);
     if (!p) return;
     if (!this.ghost) {
-      const size = { power: 66, refinery: 84, barracks: 66, factory: 88 }[this.placingType] ?? 66;
+      const size = this.placeSize(this.placingType);
       this.ghost = new THREE.Mesh(
         new THREE.BoxGeometry(size, 14, size),
         new THREE.MeshBasicMaterial({ color: 0x6ad48f, transparent: true, opacity: .45 }),
@@ -412,6 +454,23 @@ export class SceneView {
       this.scene.add(this.ghost);
     }
     this.ghost.position.set(p.x, 7, p.z);
+    // 落位合法着色：对齐源 render.js:1177 的 canPlace → 绿/红。
+    const ok = this.canPlaceAt(this.placingType, p.x, p.z);
+    (this.ghost.material as THREE.MeshBasicMaterial).color.setHex(placeColor(ok));
+  }
+
+  /** 建筑尺寸：优先用服务端下发的尺寸表，缺失时退回旧硬编码。 */
+  private placeSize(type: string): number {
+    const fromServer = this.placeRules?.sizes?.[type];
+    if (fromServer) return fromServer;
+    const fallback: Record<string, number> = { power: 66, refinery: 84, barracks: 66, factory: 88 };
+    return fallback[type] ?? 66;
+  }
+
+  /** 本地放置预检（服务端 place 仍独立裁决，这里只驱动 ghost 着色）。 */
+  private canPlaceAt(type: string, x: number, y: number): boolean {
+    if (!this.placeRules) return true; // 规则未到（battle 首帧前）不误报红
+    return canPlace(type, x, y, this.placeRules, this.placeScene, this.hasFactory);
   }
 
   clearGhost() {
