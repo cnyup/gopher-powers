@@ -1,17 +1,23 @@
 # Handoff — GopherPowers（great-powers-rts → Go 重写）
 
-> 交接时间：2026-10-21（第四次交接）· 当前 HEAD：`4d687c2`（工作区干净）
+> 交接时间：2026-10-21（第五次交接）· 当前 HEAD：`436f807`（工作区干净）
 > 项目：把 JS/Three.js 的 RTS「大国崛起」重写为 Go 后端 + Vue3 前端
-> 上一版交接：`d6142fe` 时的 HANDOFF；本轮**做首次浏览器实拍验收**并据此修掉四个真 bug，
-> M3 功能面收尾（见 §2/§3 与新增的 §11）
+> 上一版交接：`4d687c2` 时的 HANDOFF。本版**纠正上一版一处错误结论**：
+> M3 不是「功能面完成」——**终局闭环整块缺失**（见 §12），已用浏览器实测证伪。
 
 ---
 
 ## 1. 一句话现状
 
-**M1（模拟核心）✅**、**M2（服务端）✅**、**M3（前端）功能面完成**、**M4/M5 未开始**。
-本次交接实测：`go test ./internal/...` 11 包全 pass、`npm test` 36/36、`npm run build` exit 0
-（详见 §2 验证列）。M3 剩余的不是功能，而是**与旧版 JS 前端的视觉像素对照**。
+**M1（模拟核心）✅**、**M2（服务端）✅**、**M3（前端）渲染面完成、终局闭环缺失**、**M4/M5 未开始**。
+本次交接实测：`go test ./internal/...` 11 包全 ok、`npm test` 36/36、`npm run build` exit 0
+（详见 §2 验证列）。
+
+**M3 真正的缺口只有两个，且都不是"没实现"，是"没接线"**：
+
+1. **终局无任何呈现**（§12）——打完一局/认输，前端无胜负界面，直接弹回大厅。
+   服务端 `winner` 已下发、战报包 `report.go` 已移植，**两边都没被前端消费**。
+2. **与旧版 JS 前端的视觉像素对照**——渲染已实拍验证过存在性与着色，但未做像素级比对。
 
 ---
 
@@ -21,17 +27,17 @@
 | --- | --- | --- | --- |
 | M1 | internal/game 模拟核心全量移植 | ✅ | 对拍**双剧本全程全等**（经济 92/92、战斗 122/122 快照逐字段一致） |
 | M2 | internal/server + protocol + store | ✅ | 双 WS 客户端在 Go 服务端完整对局（battleView 裁剪/指令/结算实测通过） |
-| M3 | Vue3 前端 | 🔄 90% | 见 §3 细分 |
+| M3 | Vue3 前端 | 🔄 渲染面完成，终局缺失 | 见 §2 细分与 §12 |
 | M4 | go:embed 单二进制 + LAN + Tauri | ⬜ | — |
 | M5 | 数据迁移 + 六方压测 | ⬜ | — |
 
-**本次（2026-10-20 第三次交接）复验记录**——下个会话可直接重跑这两条：
+**本次（2026-10-21 第五次交接）复验记录**——下个会话可直接重跑这三条：
 
 | 命令 | 结果 |
 | --- | --- |
-| `go test ./internal/... -count=1` | exit 0；11 个包全 ok（含 lunar、report 显示 `[no test files]`） |
-| `npm --prefix web run build` | exit 0；49 modules，`dist/assets/index-*.js` 787.34 kB（gzip 216.87 kB），310ms |
+| `go test ./internal/... -count=1` | exit 0；11 个包全 ok（lunar、report 无测试文件） |
 | `npm --prefix web test` | 36/36 pass（FxLayer 6 + siteVisuals 7 + selection 7 + placement 16） |
+| `npm --prefix web run build` | exit 0；49 modules，`dist/assets/index-*.js` 787.37 kB（gzip 216.88 kB），351ms |
 
 ### M3 细分
 
@@ -46,7 +52,8 @@
 | 单机模式（本地打 AI） | ✅ | `d6142fe`，`create{solo:true}` 自动填 AI 席位；solo_test.go 3/3（AI 席位构造/开局 IsAI/联机房不变） |
 | 小地图 / 框选 | ✅ | `7d9de93`，`selection.ts` 纯函数 + `SceneView` 拖拽/小地图 canvas |
 | 建筑落位红绿着色 | ✅ | `4d687c2`，`placement.ts` 复刻 canPlace（16/16）+ 服务端下发 `placeRules` |
-| 视觉对照验收（与旧版截图比对） | ⬜ | **渲染已实拍验证过存在性/着色**（§11），但未与旧版像素级对照，需人工或视觉模型 |
+| **终局结算界面** | ⬜ | **整块缺失**——`winner` 已下发但前端零消费，战报包 `report.go` 未被 `battleView` 调用（§12） |
+| 视觉对照验收（与旧版截图比对） | ⬜ | 渲染已实拍验证过存在性/着色（§11），未与旧版像素级对照，需人工或视觉模型 |
 
 > 注：上一版把「建筑落位吸附」列为待办——**实测源项目根本没有吸附**
 > （`render.js:1183` 直接把指针世界坐标传给 `canPlace`/`placeBuilding`）。
@@ -168,13 +175,14 @@ cd /tmp/gpr-src && npm install     # 对拍/mjs 需要 ws、pathfinding；E2E �
 
 ## 7. 下一步建议（按优先级）
 
-1. **小地图 + 框选 + 建筑落位吸附**：M3 最后一块。框选用 raycaster 矩形求交
-   （`pickables` 已有，扩成矩形查询即可）；小地图用 fog bits 降采样画 canvas；
-   吸附复用 `place` 指令前的落点校验（`game.ValidPlacement` 一类）。
-2. **视觉对照验收**：本轮所有渲染改动（FxLayer/siteVisuals）都**只有逻辑测试，
-   没有浏览器实拍**。要起 `-root web/dist` + 前端，真开一局看投射物/特效/资源点。
+1. **终局闭环（M3 最后一块，也是唯一的功能缺口）**：见 §12 的三步方案。
+   服务端补下发 `battleReport`（照 `battle-view.mjs:47`），前端补结算层读
+   `view.winner`。做完 M3 才算真正"打完整局"。
+2. **视觉对照验收**：渲染已实拍（§11），但未与旧版 JS 前端做像素级比对。
+   需把源项目也跑起来，同图同机位截图对照，或人工目视。
 3. **M4 go:embed**：`//go:embed web/dist` 收进单二进制；LAN 模式（`-host 0.0.0.0`
    + 去掉 `-dev` 默认值）；Tauri 壳。
+   **注意 `-dev` 默认是 true**（`main.go:27`），对外发布前必须显式关掉。
 4. **M5**：guests.sqlite 迁移工具、六方（v3）压测——要开六方需改三处，
    见 §8.3。
 
@@ -256,13 +264,14 @@ AI 席位没有 `user`，`m.user.ID` 直接解引用会 panic——`TestSoloStar
 ## 10. 未提交/待办
 
 - 工作区干净（`git status` 实测为空）。
-- **最大遗留：所有前端渲染改动都没有浏览器实拍验证**。FxLayer（投射物/特效）
-  与 siteVisuals（资源点）只有 node 逻辑测试 + `vue-tsc` 类型门禁，真实画面
-  是否好看、位置是否对，没人看过。
+- **渲染实拍已于第四次交接完成**（§11）：投射物/特效/资源点/小地图/落位着色的
+  存在性与颜色都已截图验证。仍未做的是**与旧版 JS 前端的像素级对照**。
+- **终局闭环缺失**（§12）：M3 唯一的功能缺口，服务端 `winner` 与 `report.go`
+  都就绪，只差接线。
 - `web/src/scene/models/*.js` 是从源项目平移的 ES 模块（未改写逻辑，仅改资产 URL
   与 data 导入）——若视觉对照发现差异，优先查 URL 与 unitData 表。
 - 单机模式的 AI 阵营是确定性选取（`enemyFactionOf`，russia 优先），没有难度/随机。
-- **交付工具限制（踩了两轮）**：`deliver_task` 无法对 Go 的 `_test.go` 逐文件归因
+- **交付工具限制（踩了三轮）**：`deliver_task` 无法对 Go 的 `_test.go` 逐文件归因
   （连已提交的 `server_test.go` 都报"目标不存在"），node `.mjs` 测试需先在
   `web/package.json` 加 `test` 脚本才可能被识别。绕过方式经用户确认后使用裸
   `git commit`（`d21c675`、`d6142fe` 两次）。
@@ -325,3 +334,83 @@ bug 1 与 §9.4 同族——上次补 `userID()`/`isAI()` 时有**一处漏网**
 `run_tests()` 全量跑能拿到可采证记录，但它把 `filter="solo"` 当包名解析 → "setup failed"，
 反而污染门禁判成 RED。**结论：Go 侧一律 `go test ./internal/...` + 裸 `git commit`**
 （本轮 `4d687c2` 已再次经用户流程确认）。
+
+---
+
+## 12. 第五次交接（2026-10-21）：M3 终局闭环缺失（上一版结论有误）
+
+### 12.1 上一版的错误结论
+
+第四版交接（`436f807`）写的是「M3 功能面完成」。**这是错的**，本轮用浏览器实测证伪。
+
+错因：上一轮我只验到「渲染能出画面、ghost 能红绿」，就把「功能面」当成闭合了。
+但重写方案 §六 给 M3 的验收标准是「**新前端连 Go 服务端打完整局**」——
+打完一局没有任何结果呈现，就不算完整局。
+
+### 12.2 实测证据（Playwright 操作真实浏览器）
+
+脚本流程：起服务（`-port 4191 -root web/dist`）→ 打开页面 → 点「单机对战 AI」
+→ 等 6s → 点「认输退出」→ 观察 DOM 与 WS 帧。
+
+| 观察点 | 实测结果 |
+| --- | --- |
+| 点击前 | `hasBattle=true`，战场 HUD 正常（资金/电力/时间/部队列表齐全） |
+| 点击后 | `hasBattle=false`，`hasLobby=true` |
+| 正文内容 | 只有大厅文案，含「战绩 0 胜 / 0 负 / 0 平」 |
+| 结算元素 | `.modal` / `.result` / `.settle` **全部不存在** |
+| WS 帧序列 | 4×`snapshot`（带 `winner`）→ 3×`room`（`room: null`） |
+
+结论：**不是"停在战场无提示"，而是无提示直接弹回大厅**。
+服务端发了一串带 `winner` 的快照，前端一个都没消费，紧接着 `room:null` 把用户踢回大厅。
+
+### 12.3 代码层根因（三处，全是"已实现但没接线"）
+
+| # | 事实 | 位置 |
+| --- | --- | --- |
+| 1 | 服务端**已下发** `view.winner`（`null`=平局 / `0`=己方胜 / `1`=敌方胜） | `internal/server/view.go:241`，`owner()` 重排在 `:230` |
+| 2 | 前端**从未读取** `winner` | `grep -rn "winner" web/src/` → 零命中（除无关的 `assetError`） |
+| 3 | 战报包 `report.go` 已完整移植（对齐源 `battle-report.js`），`g.BattleStats` 也在跑，但 `battleView` **从未调用它** | `internal/game/report/report.go` 全包；`grep battleReport internal/server/view.go` → 无 |
+| 4 | 源项目**有**这个字段 | `/tmp/gpr-src/server/battle-view.mjs:47` |
+
+即：这是又一处「移植了但没接线」的死代码。`report` 包目前只有 `update.go`/`savegame.go`/
+`combat.go` 在累计统计，统计结果无处可去。
+
+### 12.4 修复方案（三步，未实施）
+
+**第 1 步 · 服务端补下发 `battleReport`**（对齐 `battle-view.mjs:47`）
+
+```go
+// internal/server/view.go 返回 map 里加：
+"battleReport": battleReportView(g, order),
+```
+
+语义要点：
+- `g.Running` 为真时返回 `nil`（对局进行中无战报）。
+- 否则取 `report.Build(g.BattleStats, delivered, intercepted)`，
+  再按 `order`（视角方恒为 side 0）重排 `Sides`，`Events[].Owner` 走同一个 `owner()` 映射。
+- 源项目还做 `report.sides: order.map(s => report.sides[s])` 与
+  `events.map(e => ({...e, owner: owner(e.owner)}))`，两处都要照做。
+
+**第 2 步 · 前端结算层**
+
+`web/src/views/Battle.vue`：
+- `const finished = computed(() => v.value?.winner !== undefined && !v.value?.running)`
+- 读 `v.winner`：`null` → 平局，`0` → 胜利，`1` → 战败。
+- 叠加结算面板：胜负标题 + 双方战损（`battleReport.sides`）+ 关键事件（`events`）
+  + 「返回大厅」`net.leave()` / 「再来一局」两个按钮。
+- 配色沿用现有 HUD 色板（`#121a24` 底 / `#6ad48f` 正向 / `#e06a5a` 负向），不引入新风格。
+
+**第 3 步 · 验证（唯一能证明"打完整局"的证据）**
+- Go：`battleView` 的 `battleReport` 三态测试（进行中 `nil` / 结束非 nil / 侧别重排正确）。
+- 前端：若抽出纯函数（胜负文案映射、报表格式化）则加 node 测试。
+- 浏览器：真打一局或认输 → 截图确认结算层出现 → 点「返回大厅」能回大厅。
+
+### 12.5 一条方法论教训
+
+**正则命中不等于语义命中。** 本轮第一次跑验收脚本时，我用
+`/胜|负|平局/` 判断页面上有没有胜负文案，返回 `true`，差点当成验收通过——
+它匹配的是大厅那行「战绩 0 胜 / 0 负 / 0 平」。
+改成逐行 dump 正文（`innerText.split('\n')`）才看清真相。
+
+写验收脚本时，断言要锚在**结构**（`.result` 元素是否存在、特定 DOM 节点文本）
+而不是**正则扫全文**。
